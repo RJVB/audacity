@@ -19,17 +19,19 @@
 #define __AUDACITY_PROJECT__
 
 #include "Audacity.h"
+#include "Experimental.h"
 
 #include "DirManager.h"
 #include "UndoManager.h"
 #include "ViewInfo.h"
-#include "TrackPanel.h"
-#include "AudioIO.h"
+#include "TrackPanelListener.h"
+#include "AudioIOListener.h"
 #include "commands/CommandManager.h"
 #include "effects/EffectManager.h"
 #include "xml/XMLTagHandler.h"
-#include "toolbars/SelectionBar.h"
-#include "FreqWindow.h"
+#include "toolbars/SelectionBarListener.h"
+#include "toolbars/SpectralSelectionBarListener.h"
+#include "widgets/Meter.h"
 
 #include <wx/defs.h>
 #include <wx/event.h>
@@ -55,6 +57,10 @@ class ODLock;
 class RecordingRecoveryHandler;
 class TrackList;
 class Tags;
+class EffectPlugs;
+
+class TrackPanel;
+class FreqWindow;
 
 // toolbar classes
 class ControlToolBar;
@@ -62,7 +68,8 @@ class DeviceToolBar;
 class EditToolBar;
 class MeterToolBar;
 class MixerToolBar;
-class SelectionToolBar;
+class SelectionBar;
+class SpectralSelectionBar;
 class Toolbar;
 class ToolManager;
 class ToolsToolBar;
@@ -119,6 +126,7 @@ class ImportXMLTagHandler : public XMLTagHandler
 class AUDACITY_DLL_API AudacityProject:  public wxFrame,
                                      public TrackPanelListener,
                                      public SelectionBarListener,
+                                     public SpectralSelectionBarListener,
                                      public XMLTagHandler,
                                      public AudioIOListener
 {
@@ -134,8 +142,8 @@ class AUDACITY_DLL_API AudacityProject:  public wxFrame,
 
    double GetRate() { return mRate; }
    double GetZoom() { return mViewInfo.zoom; }
-   double GetSel0() { return mViewInfo.sel0; }
-   double GetSel1() { return mViewInfo.sel1; }
+   double GetSel0() { return mViewInfo.selectedRegion.t0(); }
+   double GetSel1() { return mViewInfo.selectedRegion.t1(); }
 
    Track *GetFirstVisible();
    void UpdateFirstVisible();
@@ -279,7 +287,9 @@ class AUDACITY_DLL_API AudacityProject:  public wxFrame,
    static void DeleteClipboard();
    static void DeleteAllProjectsDeleteLock();
 
-   void UpdateMenus();
+   // checkActive is a temporary hack that should be removed as soon as we
+   // get multiple effect preview working
+   void UpdateMenus(bool checkActive = true);
    void UpdatePrefs();
    void UpdatePrefsVariables();
    void RedrawProject(const bool bForceWaveTracks = false);
@@ -310,7 +320,15 @@ class AUDACITY_DLL_API AudacityProject:  public wxFrame,
    // Selection Format
 
    void SetSelectionFormat(const wxString & format);
-   const wxString & GetSelectionFormat();
+   const wxString & GetSelectionFormat() const;
+
+   // Spectral Selection Formats
+
+   void SetFrequencySelectionFormatName(const wxString & format);
+   const wxString & GetFrequencySelectionFormatName() const;
+
+   void SetLogFrequencySelectionFormatName(const wxString & format);
+   const wxString & GetLogFrequencySelectionFormatName() const;
 
    // Scrollbars
 
@@ -356,16 +374,23 @@ class AUDACITY_DLL_API AudacityProject:  public wxFrame,
 
    DeviceToolBar *GetDeviceToolBar();
    EditToolBar *GetEditToolBar();
-   MeterToolBar *GetMeterToolBar();
    MixerToolBar *GetMixerToolBar();
    SelectionBar *GetSelectionBar();
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   SpectralSelectionBar *GetSpectralSelectionBar();
+#endif
    ToolsToolBar *GetToolsToolBar();
    TranscriptionToolBar *GetTranscriptionToolBar();
+
+   Meter *GetPlaybackMeter();
+   void SetPlaybackMeter(Meter *playback);
+   Meter *GetCaptureMeter();
+   void SetCaptureMeter(Meter *capture);
 
    LyricsWindow* GetLyricsWindow() { return mLyricsWindow; };
    MixerBoard* GetMixerBoard() { return mMixerBoard; };
 
-   // SelectionBar callback methods
+   // SelectionBarListener callback methods
 
    virtual double AS_GetRate();
    virtual void AS_SetRate(double rate);
@@ -374,6 +399,18 @@ class AUDACITY_DLL_API AudacityProject:  public wxFrame,
    virtual const wxString & AS_GetSelectionFormat();
    virtual void AS_SetSelectionFormat(const wxString & format);
    virtual void AS_ModifySelection(double &start, double &end, bool done);
+
+   // SpectralSelectionBarListener callback methods
+
+   virtual double SSBL_GetRate() const;
+
+   virtual const wxString & SSBL_GetFrequencySelectionFormatName();
+   virtual void SSBL_SetFrequencySelectionFormatName(const wxString & formatName);
+
+   virtual const wxString & SSBL_GetLogFrequencySelectionFormatName();
+   virtual void SSBL_SetLogFrequencySelectionFormatName(const wxString & formatName);
+
+   virtual void SSBL_ModifySpectralSelection(double &bottom, double &top, bool done);
 
    void SetStateTo(unsigned int n);
 
@@ -450,6 +487,8 @@ class AUDACITY_DLL_API AudacityProject:  public wxFrame,
 
    int mSnapTo;
    wxString mSelectionFormat;
+   wxString mFrequencySelectionFormatName;
+   wxString mLogFrequencySelectionFormatName;
 
    TrackList *mLastSavedTracks;
 
@@ -498,6 +537,10 @@ class AUDACITY_DLL_API AudacityProject:  public wxFrame,
 
    // dialog for missing alias warnings
    wxDialog            *mAliasMissingWarningDialog;
+
+   // Project owned meters
+   Meter *mPlaybackMeter;
+   Meter *mCaptureMeter;
 
  public:
    ToolManager *mToolManager;
@@ -561,7 +604,7 @@ class AUDACITY_DLL_API AudacityProject:  public wxFrame,
    wxArrayString mStrOtherNamesArray; // used to make sure compressed file names are unique
 
    // Last effect applied to this project
-   Effect *mLastEffect;
+   PluginID mLastEffect;
    int mLastEffectType;
 
    // The screenshot class needs to access internals
@@ -575,13 +618,13 @@ class AUDACITY_DLL_API AudacityProject:  public wxFrame,
    // Are we currently closing as the result of a menu command?
    bool mMenuClose;
 
- public:
     DECLARE_EVENT_TABLE()
 };
 
 typedef void (AudacityProject::*audCommandFunction)();
 typedef void (AudacityProject::*audCommandKeyFunction)(const wxEvent *);
 typedef void (AudacityProject::*audCommandListFunction)(int);
+typedef void (AudacityProject::*audCommandPluginFunction)(const PluginID &);
 
 // Previously this was in menus.cpp, and the declaration of the
 // command functor was not visible anywhere else.
@@ -595,15 +638,26 @@ public:
    AudacityProjectCommandFunctor(AudacityProject *project,
       audCommandListFunction commandFunction);
    AudacityProjectCommandFunctor(AudacityProject *project,
+      audCommandPluginFunction commandFunction,
+      const PluginID & pluginID);
+#if defined(EFFECT_CATEGORIES)
+   AudacityProjectCommandFunctor(AudacityProject *project,
       audCommandListFunction commandFunction,
       wxArrayInt explicitIndices);
+#endif
+
    virtual void operator()(int index = 0, const wxEvent *evt = NULL);
+
 private:
    AudacityProject *mProject;
    audCommandFunction mCommandFunction;
    audCommandKeyFunction mCommandKeyFunction;
    audCommandListFunction mCommandListFunction;
+   audCommandPluginFunction mCommandPluginFunction;
+   PluginID mPluginID;
+#if defined(EFFECT_CATEGORIES)
    wxArrayInt mExplicitIndices;
+#endif
 };
 
 #endif

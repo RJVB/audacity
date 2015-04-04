@@ -162,13 +162,11 @@ void QualityPrefs::PopulateOrExchange(ShuttleGui & S)
    {
       S.StartMultiColumn(2, wxEXPAND);
       {
-         S.SetStretchyCol(2);
-
          S.TieChoice(_("Sample Rate Con&verter:"),
                      Resample::GetFastMethodKey(),
                      Resample::GetFastMethodDefault(),
                      mConverterNames,
-                     mConverterLabels),
+                     mConverterLabels);
          S.SetSizeHints(mConverterNames);
 
          S.TieChoice(_("&Dither:"),
@@ -190,7 +188,7 @@ void QualityPrefs::PopulateOrExchange(ShuttleGui & S)
                      Resample::GetBestMethodKey(),
                      Resample::GetBestMethodDefault(),
                      mConverterNames,
-                     mConverterLabels),
+                     mConverterLabels);
          S.SetSizeHints(mConverterNames);
 
          S.TieChoice(_("Dit&her:"),

@@ -17,11 +17,11 @@
 #include <wx/intl.h>
 
 #include "Generator.h"
-#include "../widgets/TimeTextCtrl.h"
 
 class wxString;
 class wxChoice;
 class wxTextCtrl;
+class NumericTextCtrl;
 class ShuttleGui;
 
 #define __UNINITIALIZED__ (-1)
@@ -41,7 +41,7 @@ class EffectNoise : public BlockGenerator {
    virtual bool Init();
 
    virtual wxString GetEffectName() {
-      return wxString(_("Noise..."));
+      return wxString(wxTRANSLATE("Noise..."));
    }
 
    virtual std::set<wxString> GetEffectCategories() {
@@ -52,6 +52,11 @@ class EffectNoise : public BlockGenerator {
 
    virtual wxString GetEffectIdentifier() {
       return wxString(wxT("Noise"));
+   }
+
+   // Return true if the effect supports processing via batch chains.
+   virtual bool SupportsChains() {
+      return false;
    }
 
    virtual wxString GetEffectDescription() {
@@ -114,7 +119,7 @@ class NoiseDialog:public EffectDialog {
 
  private:
    EffectNoise  *mEffect;
-   TimeTextCtrl *mNoiseDurationT;
+   NumericTextCtrl *mNoiseDurationT;
 };
 
 #endif

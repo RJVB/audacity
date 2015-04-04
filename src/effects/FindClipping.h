@@ -34,7 +34,7 @@ class EffectFindClipping:public Effect
 
    virtual wxString GetEffectName()
    {
-      return wxString(_("Find Clipping..."));
+      return wxString(wxTRANSLATE("Find Clipping..."));
    }
 
    virtual std::set<wxString> GetEffectCategories()
@@ -46,7 +46,7 @@ class EffectFindClipping:public Effect
 
    virtual wxString GetEffectIdentifier()
    {
-      return wxString(wxT("FindClipping"));
+      return wxString(wxT("Find Clipping"));
    }
 
    virtual wxString GetEffectAction()

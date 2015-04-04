@@ -62,6 +62,10 @@ from there.  Audacity will look for a file called "Pause.png".
    DEFINE_IMAGE( bmpFFwdDisabled, wxImage( 16, 16 ), wxT("FFwdDisabled"));
    DEFINE_IMAGE( bmpRecord, wxImage( 16, 16 ), wxT("Record"));
    DEFINE_IMAGE( bmpRecordDisabled, wxImage( 16, 16 ), wxT("RecordDisabled"));
+   DEFINE_IMAGE( bmpCutPreview, wxImage( 16, 16 ), wxT("CutPreview"));
+   DEFINE_IMAGE( bmpCutPreviewDisabled, wxImage( 16, 16 ), wxT("CutPreviewDisabled"));
+   DEFINE_IMAGE( bmpAppendRecord, wxImage( 16, 16 ), wxT("AppendRecord"));
+   DEFINE_IMAGE( bmpAppendRecordDisabled, wxImage( 16, 16 ), wxT("AppendRecordDisabled"));
 
    SET_THEME_FLAGS(  resFlagNewLine  );
    DEFINE_IMAGE( bmpUpButtonLarge, wxImage( 48, 48 ), wxT("UpButtonLarge"));
@@ -102,6 +106,9 @@ from there.  Audacity will look for a file called "Pause.png".
    DEFINE_IMAGE( bmpLabelCursorLeft, wxImage( 32, 32 ), wxT("LabelCursorLeft"));
    DEFINE_IMAGE( bmpLabelCursorRight, wxImage( 32, 32 ), wxT("LabelCursorRight"));
    DEFINE_IMAGE( bmpDisabledCursor, wxImage( 32, 32 ), wxT("DisabledCursor"));
+   DEFINE_IMAGE( bmpBottomFrequencyCursor, wxImage( 32, 32 ), wxT("BottomFrequencyCursor"));
+   DEFINE_IMAGE( bmpTopFrequencyCursor, wxImage( 32, 32 ), wxT("TopFrequencyCursor"));
+   DEFINE_IMAGE( bmpBandWidthCursor, wxImage(32, 32), wxT("BandWidthCursor"));
 
    SET_THEME_FLAGS(  resFlagNone  );
    DEFINE_IMAGE( bmpIBeam, wxImage( 27, 27 ), wxT("IBeam"));
@@ -213,6 +220,9 @@ from there.  Audacity will look for a file called "Pause.png".
 
    DEFINE_IMAGE( bmpSyncLockSelTile, wxImage(20, 22), wxT("SyncLockSelTile"));
    DEFINE_IMAGE( bmpSyncLockIcon, wxImage(12, 12), wxT("SyncLockIcon"));
+
+   SET_THEME_FLAGS(  resFlagNone  );
+   DEFINE_IMAGE( bmpEditEffects, wxImage(21, 20), wxT("EditEffects"));
 
 #if defined(EXPERIMENTAL_THEMING)
    DEFINE_COLOUR( clrBlank,      wxColour( 64,  64,  64), wxT("Blank"));

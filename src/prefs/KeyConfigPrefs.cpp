@@ -329,7 +329,7 @@ void KeyConfigPrefs::OnImport(wxCommandEvent & WXUNUSED(event))
                        path,
                        file,
                        wxT(""),
-                       _("XML files (*.xml)|*.xml|All files (*.*)|*.*"),
+                       _("XML files (*.xml)|*.xml|All files|*"),
                        wxRESIZE_BORDER,
                        this);
 
@@ -361,7 +361,7 @@ void KeyConfigPrefs::OnExport(wxCommandEvent & WXUNUSED(event))
                        path,
                        file,
                        wxT("xml"),
-                       _("XML files (*.xml)|*.xml|All files (*.*)|*.*"),
+                       _("XML files (*.xml)|*.xml|All files|*"),
                        wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxRESIZE_BORDER,
                        this);
 
@@ -420,7 +420,7 @@ void KeyConfigPrefs::OnHotkeyKeyDown(wxKeyEvent & e)
       nevent.SetDirection(!e.ShiftDown());
       nevent.SetEventObject(t);
       nevent.SetCurrentFocus(t);
-      t->GetParent()->ProcessEvent(nevent);
+      t->GetParent()->GetEventHandler()->ProcessEvent(nevent);
       return;
    }
 
@@ -465,7 +465,7 @@ void KeyConfigPrefs::OnFilterKeyDown(wxKeyEvent & e)
       nevent.SetDirection(!e.ShiftDown());
       nevent.SetEventObject(t);
       nevent.SetCurrentFocus(t);
-      t->GetParent()->ProcessEvent(nevent);
+      t->GetParent()->GetEventHandler()->ProcessEvent(nevent);
 
       return;
    }
@@ -914,7 +914,7 @@ void KeyConfigPrefs::OnImport(wxCommandEvent & WXUNUSED(event))
                        path,
                        file,
                        wxT(""),
-                       _("XML files (*.xml)|*.xml|All files (*.*)|*.*"),
+                       _("XML files (*.xml)|*.xml|All files|*"),
                        wxRESIZE_BORDER,
                        this);
 
@@ -946,7 +946,7 @@ void KeyConfigPrefs::OnExport(wxCommandEvent & WXUNUSED(event))
                        path,
                        file,
                        wxT("xml"),
-                       _("XML files (*.xml)|*.xml|All files (*.*)|*.*"),
+                       _("XML files (*.xml)|*.xml|All files|*"),
                        wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxRESIZE_BORDER,
                        this);
 

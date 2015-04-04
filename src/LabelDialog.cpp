@@ -36,7 +36,7 @@
 #include "Project.h"
 #include "Track.h"
 #include "ViewInfo.h"
-#include "widgets/TimeTextCtrl.h"
+#include "widgets/NumericTextCtrl.h"
 
 #include "FileDialog.h"
 
@@ -59,8 +59,7 @@ class RowData
    int index;
 
    wxString title;
-   double stime;
-   double etime;
+   SelectedRegion selectedRegion;
 };
 
 enum {
@@ -227,7 +226,7 @@ bool LabelDialog::TransferDataToWindow()
    int i;
 
    // Set the editor parameters.  Do this each time since they may change
-   // due to new tracks and change in TimeTextCtrl format.  Rate won't
+   // due to new tracks and change in NumericTextCtrl format.  Rate won't
    // change but might as well leave it here.
    mChoiceEditor->SetChoices(mTrackNames);
    mTimeEditor->SetFormat(mFormat);
@@ -251,8 +250,13 @@ bool LabelDialog::TransferDataToWindow()
       // Set the cell contents
       mGrid->SetCellValue(i, Col_Track, TrackName(rd->index));
       mGrid->SetCellValue(i, Col_Label, rd->title);
-      mGrid->SetCellValue(i, Col_Stime, wxString::Format(wxT("%g"), rd->stime));
-      mGrid->SetCellValue(i, Col_Etime, wxString::Format(wxT("%g"), rd->etime));
+      mGrid->SetCellValue(i, Col_Stime,
+         wxString::Format(wxT("%g"), rd->selectedRegion.t0()));
+      mGrid->SetCellValue(i, Col_Etime,
+         wxString::Format(wxT("%g"), rd->selectedRegion.t1()));
+
+      // PRL: to do: -- populate future additional selection fields
+      // and write event code to update them from controls
    }
 
    // Autosize all the rows
@@ -336,7 +340,7 @@ bool LabelDialog::TransferDataFromWindow()
          return false;
 
       // Add the label to it
-      ((LabelTrack *) t)->AddLabel(rd->stime, rd->etime, rd->title);
+      ((LabelTrack *) t)->AddLabel(rd->selectedRegion, rd->title);
       ((LabelTrack *) t)->Unselect();
    }
 
@@ -400,8 +404,7 @@ void LabelDialog::AddLabels(LabelTrack *t)
       RowData *rd = new RowData();
 
       rd->index = tndx;
-      rd->stime = ls->t;
-      rd->etime = ls->t1;
+      rd->selectedRegion = ls->selectedRegion;
       rd->title = ls->title;
 
       mData.Add(rd);
@@ -446,8 +449,7 @@ void LabelDialog::OnInsert(wxCommandEvent &event)
 
    // Initialize the new label
    rd->index = index;
-   rd->stime = 0.0;
-   rd->etime = 0.0;
+   rd->selectedRegion = SelectedRegion();
    rd->title = wxT("");
 
    // Insert it before or after the current row
@@ -516,7 +518,7 @@ void LabelDialog::OnImport(wxCommandEvent & WXUNUSED(event))
                     path,     // Path
                     wxT(""),       // Name
                     wxT(".txt"),   // Extension
-                    _("Text files (*.txt)|*.txt|All files (*.*)|*.*"),
+                    _("Text files (*.txt)|*.txt|All files|*"),
                     wxRESIZE_BORDER, // Flags
                     this);    // Parent
 
@@ -565,7 +567,7 @@ void LabelDialog::OnExport(wxCommandEvent & WXUNUSED(event))
    wxString fName = mTrackNames[mTrackNames.GetCount() - 1].AfterFirst(wxT('-')).Mid(1);
 
    fName = FileSelector(_("Export Labels As:"),
-                        NULL,
+                        wxEmptyString,
                         fName.c_str(),
                         wxT("txt"),
                         wxT("*.txt"),
@@ -612,7 +614,7 @@ void LabelDialog::OnExport(wxCommandEvent & WXUNUSED(event))
    for (i = 0; i < cnt; i++) {
       RowData *rd = mData[i];
 
-      lt->AddLabel(rd->stime, rd->etime, rd->title);
+      lt->AddLabel(rd->selectedRegion, rd->title);
    }
 
    // Export them and clean
@@ -641,8 +643,7 @@ void LabelDialog::OnSelectCell(wxGridEvent &event)
    {
       RowData *rd;
       rd = mData[event.GetRow()];
-      mViewInfo->sel0 = rd->stime;
-      mViewInfo->sel1 = rd->etime;
+      mViewInfo->selectedRegion = rd->selectedRegion;
 
       GetActiveProject()->RedrawProject();
    }
@@ -739,11 +740,11 @@ void LabelDialog::OnChangeLabel(wxGridEvent & WXUNUSED(event), int row, RowData 
 void LabelDialog::OnChangeStime(wxGridEvent & WXUNUSED(event), int row, RowData *rd)
 {
    // Remember the value...no need to repopulate
-   mGrid->GetCellValue(row, Col_Stime).ToDouble(&rd->stime);
-   if (rd->etime < rd->stime) {
-      rd->etime = rd->stime;
-      mGrid->SetCellValue(row, Col_Etime, wxString::Format(wxT("%g"), rd->etime));
-   }
+   double t;
+   mGrid->GetCellValue(row, Col_Stime).ToDouble(&t);
+   rd->selectedRegion.setT0(t, false);
+   mGrid->SetCellValue(row, Col_Etime, wxString::Format(wxT("%g"),
+                       rd->selectedRegion.t1()));
 
    return;
 }
@@ -751,11 +752,11 @@ void LabelDialog::OnChangeStime(wxGridEvent & WXUNUSED(event), int row, RowData 
 void LabelDialog::OnChangeEtime(wxGridEvent & WXUNUSED(event), int row, RowData *rd)
 {
    // Remember the value...no need to repopulate
-   mGrid->GetCellValue(row, Col_Etime).ToDouble(&rd->etime);
-   if (rd->etime < rd->stime) {
-      rd->stime = rd->etime;
-      mGrid->SetCellValue(row, Col_Stime, wxString::Format(wxT("%g"), rd->stime));
-   }
+   double t;
+   mGrid->GetCellValue(row, Col_Etime).ToDouble(&t);
+   rd->selectedRegion.setT1(t, false);
+   mGrid->SetCellValue(row, Col_Stime, wxString::Format(wxT("%g"),
+                       rd->selectedRegion.t0()));
 
    return;
 }

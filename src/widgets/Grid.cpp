@@ -24,7 +24,7 @@
 #include <wx/toplevel.h>
 
 #include "Grid.h"
-#include "TimeTextCtrl.h"
+#include "NumericTextCtrl.h"
 
 TimeEditor::TimeEditor()
 {
@@ -44,7 +44,7 @@ TimeEditor::~TimeEditor()
 
 void TimeEditor::Create(wxWindow *parent, wxWindowID id, wxEvtHandler *handler)
 {
-   m_control = new TimeTextCtrl(parent,
+   m_control = new NumericTextCtrl(NumericConverter::TIME, parent,
                                 wxID_ANY,
                                 mFormat,
                                 mOld,
@@ -71,9 +71,10 @@ void TimeEditor::BeginEdit(int row, int col, wxGrid *grid)
 {
    wxGridTableBase *table = grid->GetTable();
 
-   table->GetValue(row, col).ToDouble(&mOld);
+   mOldString = table->GetValue(row, col);
+   mOldString.ToDouble(&mOld);
 
-   GetTimeCtrl()->SetTimeValue(mOld);
+   GetTimeCtrl()->SetValue(mOld);
    GetTimeCtrl()->EnableMenu();
 
    GetTimeCtrl()->SetFocus();
@@ -81,19 +82,35 @@ void TimeEditor::BeginEdit(int row, int col, wxGrid *grid)
 
 bool TimeEditor::EndEdit(int row, int col, wxGrid *grid)
 {
-   double newtime = GetTimeCtrl()->GetTimeValue();
+    wxString newvalue;
+    bool changed = EndEdit(row, col, grid, mOldString, &newvalue);
+    if (changed) {
+        ApplyEdit(row, col, grid);
+    }
+    return changed;
+}
+
+bool TimeEditor::EndEdit(int WXUNUSED(row), int WXUNUSED(col), const wxGrid *WXUNUSED(grid), const wxString &WXUNUSED(oldval), wxString *newval)
+{
+   double newtime = GetTimeCtrl()->GetValue();
    bool changed = newtime != mOld;
 
    if (changed) {
-      grid->GetTable()->SetValue(row, col, wxString::Format(wxT("%g"), newtime));
+      mValueAsString = wxString::Format(wxT("%g"), newtime);
+      *newval = mValueAsString;
    }
 
    return changed;
 }
 
+void TimeEditor::ApplyEdit(int row, int col, wxGrid *grid)
+{
+   grid->GetTable()->SetValue(row, col, mValueAsString);
+}
+
 void TimeEditor::Reset()
 {
-   GetTimeCtrl()->SetTimeValue(mOld);
+   GetTimeCtrl()->SetValue(mOld);
 }
 
 bool TimeEditor::IsAcceptedKey(wxKeyEvent &event)
@@ -114,7 +131,7 @@ wxGridCellEditor *TimeEditor::Clone() const
 
 wxString TimeEditor::GetValue() const
 {
-   return wxString::Format(wxT("%g"), GetTimeCtrl()->GetTimeValue());
+   return wxString::Format(wxT("%g"), GetTimeCtrl()->GetValue());
 }
 
 wxString TimeEditor::GetFormat()
@@ -156,7 +173,7 @@ void TimeRenderer::Draw(wxGrid &grid,
 
       table->GetValue(row, col).ToDouble(&value);
 
-      TimeTextCtrl tt(&grid,
+      NumericTextCtrl tt(NumericConverter::TIME, &grid,
                       wxID_ANY,
                       te->GetFormat(),
                       value,
@@ -164,7 +181,7 @@ void TimeRenderer::Draw(wxGrid &grid,
                       wxPoint(10000, 10000),  // create offscreen
                       wxDefaultSize,
                       true);
-      tstr = tt.GetTimeString();
+      tstr = tt.GetString();
 
       te->DecRef();
    }
@@ -212,7 +229,7 @@ wxSize TimeRenderer::GetBestSize(wxGrid &grid,
    if (te) {
       double value;
       table->GetValue(row, col).ToDouble(&value);
-      TimeTextCtrl tt(&grid,
+      NumericTextCtrl tt(NumericConverter::TIME, &grid,
                       wxID_ANY,
                       te->GetFormat(),
                       value,
@@ -295,8 +312,19 @@ void ChoiceEditor::BeginEdit(int row, int col, wxGrid* grid)
    Choice()->SetFocus();
 }
 
-bool ChoiceEditor::EndEdit(int row, int col,
-                           wxGrid* grid)
+bool ChoiceEditor::EndEdit(int row, int col, wxGrid *grid)
+{
+    wxString newvalue;
+    bool changed = EndEdit(row, col, grid, mOld, &newvalue);
+    if (changed) {
+        ApplyEdit(row, col, grid);
+    }
+    return changed;
+}
+
+bool ChoiceEditor::EndEdit(int WXUNUSED(row), int WXUNUSED(col),
+                           const wxGrid* WXUNUSED(grid),
+                           const wxString &WXUNUSED(oldval), wxString *newval)
 {
    int sel = Choice()->GetSelection();
 
@@ -307,12 +335,20 @@ bool ChoiceEditor::EndEdit(int row, int col,
    }
 
    wxString val = mChoices[sel];
-   if (val == mOld)
-      return false;
+   bool changed = val != mOld;
 
-   grid->GetTable()->SetValue(row, col, val);
+   if (changed)
+   {
+      mValueAsString = val;
+      *newval = val;
+   }
 
-   return true;
+   return changed;
+}
+
+void ChoiceEditor::ApplyEdit(int row, int col, wxGrid *grid)
+{
+   grid->GetTable()->SetValue(row, col, mValueAsString);
 }
 
 void ChoiceEditor::Reset()
@@ -491,7 +527,7 @@ void Grid::OnKeyDown(wxKeyEvent &event)
             if (def && def->IsEnabled()) {
                wxCommandEvent cevent(wxEVT_COMMAND_BUTTON_CLICKED,
                                      def->GetId());
-               GetParent()->ProcessEvent(cevent);
+               GetParent()->GetEventHandler()->ProcessEvent(cevent);
             }
          }
          else {
@@ -732,7 +768,7 @@ wxAccStatus GridAx::GetName(int childId, wxString *name)
          double value;
          v.ToDouble(&value);
 
-         TimeTextCtrl tt(mGrid,
+         NumericTextCtrl tt(NumericConverter::TIME, mGrid,
                          wxID_ANY,
                          c->GetFormat(),
                          value,
@@ -740,7 +776,7 @@ wxAccStatus GridAx::GetName(int childId, wxString *name)
                          wxPoint(10000, 10000),  // create offscreen
                          wxDefaultSize,
                          true);
-         v = tt.GetTimeString();
+         v = tt.GetString();
       }
 
       if (c)
@@ -834,7 +870,11 @@ wxAccStatus GridAx::GetState(int childId, long *state)
 
 // Returns a localized string representing the value for the object
 // or child.
+#if defined(__WXMAC__)
 wxAccStatus GridAx::GetValue(int childId, wxString *strValue)
+#else
+wxAccStatus GridAx::GetValue(int WXUNUSED(childId), wxString *strValue)
+#endif
 {
    strValue->Clear();
 

@@ -8,791 +8,755 @@
 
   This class implements a VST Plug-in effect.  The plug-in must be
   loaded in a platform-specific way and passed into the constructor,
-  but from here this class handles the interfacing.  VST plug-ins
-  are used in Cubase and other Steinberg products, and all of those
-  files and the information within is copyrighted by Steinberg.
+  but from here this class handles the interfacing.
 
 **********************************************************************/
+
+//#define VST_DEBUG
+//#define DEBUG_VST
 
 // *******************************************************************
 // WARNING:  This is NOT 64-bit safe
 // *******************************************************************
 
+#if defined(BUILDING_AUDACITY)
 #include "../../Audacity.h"
+#include "../../PlatformCompatibility.h"
+
+// Make the main function private
+#define MODULEMAIN_SCOPE static
+#else
+#define MODULEMAIN_SCOPE
+#define USE_VST 1
+#endif
 
 #if USE_VST
 
+#include <limits.h>
+#include <stdio.h>
+
+#include <wx/app.h>
 #include <wx/defs.h>
+#include <wx/buffer.h>
+#include <wx/busyinfo.h>
 #include <wx/button.h>
 #include <wx/combobox.h>
+#include <wx/dcclient.h>
 #include <wx/dialog.h>
+#include <wx/file.h>
 #include <wx/filename.h>
 #include <wx/frame.h>
+#include <wx/imaglist.h>
+#include <wx/listctrl.h>
+#include <wx/log.h>
+#include <wx/module.h>
 #include <wx/msgdlg.h>
 #include <wx/process.h>
+#include <wx/progdlg.h>
+#include <wx/recguard.h>
 #include <wx/sizer.h>
 #include <wx/slider.h>
 #include <wx/scrolwin.h>
-#include <wx/stattext.h>
+#include <wx/sstream.h>
 #include <wx/statbox.h>
-#include <wx/stopwatch.h>
+#include <wx/stattext.h>
+#include <wx/timer.h>
+#include <wx/tokenzr.h>
 #include <wx/utils.h>
-#include <wx/dcclient.h>
-#include <wx/imaglist.h>
-#include <wx/listctrl.h>
 
 #if defined(__WXMAC__)
 #include <dlfcn.h>
 #include <wx/mac/private.h>
 #elif defined(__WXMSW__)
 #include <wx/dynlib.h>
+#include <wx/msw/seh.h>
+#include <shlwapi.h>
+#pragma comment(lib, "shlwapi")
 #else
-#include <dlfcn.h>
-#include <wx/dynlib.h>
+// Includes for GTK are later since they cause conflicts with our class names
 #endif
 
-#if defined(__WXMSW__)
-   #include <wx/msw/seh.h>
-   #include <shlwapi.h>
-   #pragma comment(lib, "shlwapi")
-#endif
+// TODO:  Unfortunately we have some dependencies on Audacity provided 
+//        dialogs, widgets and other stuff.  This will need to be cleaned up.
 
 #include "FileDialog.h"
-
-#include "../../AudacityApp.h"
 #include "../../FileNames.h"
 #include "../../Internat.h"
 #include "../../PlatformCompatibility.h"
-#include "../../PluginManager.h"
 #include "../../Prefs.h"
+#include "../../ShuttleGui.h"
+#include "../../effects/Effect.h"
+#include "../../widgets/NumericTextCtrl.h"
+#include "../../widgets/valnum.h"
 #include "../../xml/XMLFileReader.h"
 #include "../../xml/XMLWriter.h"
-#include "../../Theme.h"
-#include "../../widgets/valnum.h"
-#include "../EffectManager.h"
-#include "../images/Arrow.xpm"
+
+#include "audacity/ConfigInterface.h"
+
+// Must include after ours since we have a lot of name collisions
+#if defined(__WXGTK__)
+#include <dlfcn.h>
+#define Region XRegion     // Conflicts with Audacity's Region structure
+#include <gtk/gtk.h>
+#include <gdk/gdkx.h>
+#undef Region
+#endif
 
 #include "VSTEffect.h"
 
-///////////////////////////////////////////////////////////////////////////////
-//
-// RegisterVSTEffects
-//
-///////////////////////////////////////////////////////////////////////////////
+// NOTE:  To debug the subprocess, use wxLogDebug and, on Windows, Debugview
+//        from TechNet (Sysinternals).
 
-void RegisterVSTEffects()
+// ============================================================================
+//
+// Module registration entry point
+//
+// This is the symbol that Audacity looks for when the module is built as a
+// dynamic library.
+//
+// When the module is builtin to Audacity, we use the same function, but it is
+// declared static so as not to clash with other builtin modules.
+//
+// ============================================================================
+MODULEMAIN_SCOPE ModuleInterface *AudacityModule(ModuleManagerInterface *moduleManager,
+                                                 const wxString *path)
 {
-   PluginManager & pm = PluginManager::Get();
-
-   pm.Open();
-
-   bool bRescanRequired = false;
-   if (gPrefs->Read(wxT("/VST/Rescan"), (long)true) != false) {
-      bRescanRequired = true;
-      pm.PurgeType(VSTPLUGINTYPE);
-   }
-
-   if (!pm.HasType(VSTPLUGINTYPE)) {
-      pm.Close();
-      if( bRescanRequired ) {
-         if( VSTEffect::Scan() != wxID_CANCEL ) {
-            gPrefs->Write(wxT("/VST/Rescan"), false);
-            gPrefs->Flush();
-         }
-      }
-      pm.Open();
-   }
-
-   EffectManager & em = EffectManager::Get();
-
-   wxString path = pm.GetFirstPlugin(VSTPLUGINTYPE);
-   while (!path.IsEmpty()) {
-#if defined(__WXMAC__)
-      if (wxDirExists(path)) {
-#else
-      if (wxFileExists(path)) {
-#endif
-         em.RegisterEffect(new VSTEffect(path));
-      }
-
-      path = pm.GetNextPlugin(VSTPLUGINTYPE);
-   }
-
-   pm.Close();
+   // Create our effects module and register
+   return new VSTEffectsModule(moduleManager, path);
 }
 
-#if wxUSE_ACCESSIBILITY
+#if defined(BUILDING_AUDACITY)
+// ============================================================================
+//
+// Register this as a builtin module
+// 
+// We also take advantage of the fact that wxModules are initialized before
+// the wxApp::OnInit() method is called.  We check to see if Audacity was
+// executed to scan a VST effect in a different process.
+//
+// ============================================================================
+DECLARE_BUILTIN_MODULE(VSTBuiltin);
 
-class CheckListAx: public wxWindowAccessible
+class VSTSubEntry : public wxModule
 {
- public:
-   CheckListAx(wxListCtrl * window);
+public:
+   bool OnInit()
+   {
+      // Have we been started to check a plugin?
+      if (wxTheApp && wxTheApp->argc == 3 && wxStrcmp(wxTheApp->argv[1], VSTCMDKEY) == 0)
+      {
+         // NOTE:  This can really hide failures, which is what we want for those pesky
+         //        VSTs that are bad or that our support isn't currect.  But, it can also
+         //        hide Audacity failures in the subprocess, so if you're having an unruley
+         //        VST or odd Audacity failures, comment it out and you might get more info.
+         //wxHandleFatalExceptions();
+         VSTEffectsModule::Check(wxTheApp->argv[2]);
 
-   virtual ~ CheckListAx();
+         // Returning false causes default processing to display a message box, but we don't
+         // want that so disable logging.
+         wxLog::EnableLogging(false);
 
-   // Retrieves the address of an IDispatch interface for the specified child.
-   // All objects must support this property.
-   virtual wxAccStatus GetChild( int childId, wxAccessible **child );
+         return false;
+      }
 
-   // Gets the number of children.
-   virtual wxAccStatus GetChildCount( int *childCount );
+      return true;
+   };
 
-   // Gets the default action for this object (0) or > 0 (the action for a child).
-   // Return wxACC_OK even if there is no action. actionName is the action, or the empty
-   // string if there is no action.
-   // The retrieved string describes the action that is performed on an object,
-   // not what the object does as a result. For example, a toolbar button that prints
-   // a document has a default action of "Press" rather than "Prints the current document."
-   virtual wxAccStatus GetDefaultAction( int childId, wxString *actionName );
+   void OnExit() {};
 
-   // Returns the description for this object or a child.
-   virtual wxAccStatus GetDescription( int childId, wxString *description );
+   DECLARE_DYNAMIC_CLASS(VSTSubEntry);
+};
+IMPLEMENT_DYNAMIC_CLASS(VSTSubEntry, wxModule);
 
-   // Gets the window with the keyboard focus.
-   // If childId is 0 and child is NULL, no object in
-   // this subhierarchy has the focus.
-   // If this object has the focus, child should be 'this'.
-   virtual wxAccStatus GetFocus( int *childId, wxAccessible **child );
+#endif
 
-   // Returns help text for this object or a child, similar to tooltip text.
-   virtual wxAccStatus GetHelpText( int childId, wxString *helpText );
-
-   // Returns the keyboard shortcut for this object or child.
-   // Return e.g. ALT+K
-   virtual wxAccStatus GetKeyboardShortcut( int childId, wxString *shortcut );
-
-   // Returns the rectangle for this object (id = 0) or a child element (id > 0).
-   // rect is in screen coordinates.
-   virtual wxAccStatus GetLocation( wxRect& rect, int elementId );
-
-   // Gets the name of the specified object.
-   virtual wxAccStatus GetName( int childId, wxString *name );
-
-   // Returns a role constant.
-   virtual wxAccStatus GetRole( int childId, wxAccRole *role );
-
-   // Gets a variant representing the selected children
-   // of this object.
-   // Acceptable values:
-   // - a null variant (IsNull() returns TRUE)
-   // - a list variant (GetType() == wxT("list"))
-   // - an integer representing the selected child element,
-   //   or 0 if this object is selected (GetType() == wxT("long"))
-   // - a "void*" pointer to a wxAccessible child object
-   virtual wxAccStatus GetSelections( wxVariant *selections );
-
-   // Returns a state constant.
-   virtual wxAccStatus GetState( int childId, long* state );
-
-   // Returns a localized string representing the value for the object
-   // or child.
-   virtual wxAccStatus GetValue( int childId, wxString *strValue );
-
-   void SetSelected( int item );
- private:
-   wxListCtrl *mParent;
-   int mLastId;
+//----------------------------------------------------------------------------
+// VSTSubProcess
+//----------------------------------------------------------------------------
+#define OUTPUTKEY wxT("<VSTLOADCHK>-")
+enum InfoKeys
+{
+   kKeySubIDs,
+   kKeyBegin,
+   kKeyName,
+   kKeyPath,
+   kKeyVendor,
+   kKeyVersion,
+   kKeyDescription,
+   kKeyEffectType,
+   kKeyInteractive,
+   kKeyAutomatable,
+   kKeyEnd
 };
 
-CheckListAx::CheckListAx( wxListCtrl * window ):
-   wxWindowAccessible( window )
+class VSTSubProcess : public wxProcess,
+                      public EffectIdentInterface
 {
-   mParent = window;
-   mLastId = -1;
-}
-
-CheckListAx::~CheckListAx()
-{
-}
-
-void CheckListAx::SetSelected( int item )
-{
-#if 0
-   NotifyEvent(wxACC_EVENT_OBJECT_REORDER,
-               mParent,
-               wxOBJID_CLIENT,
-               0);
-#endif
-#if 1
-   if (mLastId != -1) {
-      NotifyEvent(wxACC_EVENT_OBJECT_SELECTIONREMOVE,
-               mParent,
-               wxOBJID_CLIENT,
-               mLastId);
-      mLastId = -1;
-   }
-
-   if (item != -1)
+public:
+   VSTSubProcess()
    {
-      NotifyEvent(wxACC_EVENT_OBJECT_FOCUS,
-                  mParent,
-                  wxOBJID_CLIENT,
-                  item + 1);
-
-      NotifyEvent(wxACC_EVENT_OBJECT_SELECTION,
-                  mParent,
-                  wxOBJID_CLIENT,
-                  item + 1);
-
-      mLastId = item + 1;
+      Redirect();
    }
-#endif
-}
 
-// Retrieves the address of an IDispatch interface for the specified child.
-// All objects must support this property.
-wxAccStatus CheckListAx::GetChild( int childId, wxAccessible** child )
-{
-   if( childId == wxACC_SELF )
+   // EffectClientInterface implementation
+
+   wxString GetPath()
    {
-      *child = this;
+      return mPath;
    }
-   else
+
+   wxString GetSymbol()
    {
-      *child = NULL;
+      return mName;
    }
 
-   return wxACC_OK;
-}
-
-// Gets the number of children.
-wxAccStatus CheckListAx::GetChildCount( int *childCount )
-{
-   *childCount = mParent->GetItemCount();
-
-   return wxACC_OK;
-}
-
-// Gets the default action for this object (0) or > 0 (the action for a child).
-// Return wxACC_OK even if there is no action. actionName is the action, or the empty
-// string if there is no action.
-// The retrieved string describes the action that is performed on an object,
-// not what the object does as a result. For example, a toolbar button that prints
-// a document has a default action of "Press" rather than "Prints the current document."
-wxAccStatus CheckListAx::GetDefaultAction( int WXUNUSED(childId), wxString *actionName )
-{
-   actionName->Clear();
-
-   return wxACC_OK;
-}
-
-// Returns the description for this object or a child.
-wxAccStatus CheckListAx::GetDescription( int WXUNUSED(childId), wxString *description )
-{
-   description->Clear();
-
-   return wxACC_OK;
-}
-
-// Gets the window with the keyboard focus.
-// If childId is 0 and child is NULL, no object in
-// this subhierarchy has the focus.
-// If this object has the focus, child should be 'this'.
-wxAccStatus CheckListAx::GetFocus( int *childId, wxAccessible **child )
-{
-   *childId = 0;
-   *child = this;
-
-   return wxACC_OK;
-}
-
-// Returns help text for this object or a child, similar to tooltip text.
-wxAccStatus CheckListAx::GetHelpText( int WXUNUSED(childId), wxString *helpText )
-{
-   helpText->Clear();
-
-   return wxACC_OK;
-}
-
-// Returns the keyboard shortcut for this object or child.
-// Return e.g. ALT+K
-wxAccStatus CheckListAx::GetKeyboardShortcut( int WXUNUSED(childId), wxString *shortcut )
-{
-   shortcut->Clear();
-
-   return wxACC_OK;
-}
-
-// Returns the rectangle for this object (id = 0) or a child element (id > 0).
-// rect is in screen coordinates.
-wxAccStatus CheckListAx::GetLocation( wxRect& rect, int elementId )
-{
-   if( elementId == wxACC_SELF )
+   wxString GetName()
    {
-      rect = mParent->GetRect();
-      rect.SetPosition( mParent->GetParent()->ClientToScreen( rect.GetPosition() ) );
+      return GetSymbol();
    }
-   else
+
+   wxString GetVendor()
    {
-      if( elementId <= mParent->GetItemCount() )
-      {
-         mParent->GetItemRect( elementId - 1, rect, wxLIST_RECT_LABEL );
-         rect.SetPosition( mParent->ClientToScreen( rect.GetPosition() ) );
-      }
+      return mVendor;
    }
 
-   return wxACC_OK;
-}
-
-// Gets the name of the specified object.
-wxAccStatus CheckListAx::GetName( int WXUNUSED(childId), wxString *name )
-{
-   *name = mParent->GetName();
-
-   return wxACC_OK;
-}
-
-// Returns a role constant.
-wxAccStatus CheckListAx::GetRole( int childId, wxAccRole *role )
-{
-   if( childId == wxACC_SELF )
+   wxString GetVersion()
    {
-      *role = wxROLE_SYSTEM_LIST;
+      return mVersion;
    }
-   else
+
+   wxString GetDescription()
    {
-      *role = wxROLE_SYSTEM_LISTITEM;
+      return mDescription;
    }
 
-   return wxACC_OK;
-}
-
-// Gets a variant representing the selected children
-// of this object.
-// Acceptable values:
-// - a null variant (IsNull() returns TRUE)
-// - a list variant (GetType() == wxT("list"))
-// - an integer representing the selected child element,
-//   or 0 if this object is selected (GetType() == wxT("long"))
-// - a "void*" pointer to a wxAccessible child object
-wxAccStatus CheckListAx::GetSelections( wxVariant * WXUNUSED(selections) )
-{
-   return wxACC_NOT_IMPLEMENTED;
-}
-
-// Returns a state constant.
-wxAccStatus CheckListAx::GetState( int childId, long *state )
-{
-   int flag = wxACC_STATE_SYSTEM_FOCUSABLE;
-
-   if( childId == wxACC_SELF )
+   wxString GetFamily()
    {
-      flag |= wxACC_STATE_SYSTEM_FOCUSED;
+      return VSTPLUGINTYPE;
    }
-   else
+
+   EffectType GetType()
    {
-      wxListItem item;
-
-      item.SetId( childId - 1 );
-      item.SetState( wxLIST_STATE_FOCUSED | wxLIST_STATE_SELECTED );
-      item.SetMask( wxLIST_MASK_IMAGE | wxLIST_MASK_STATE );
-
-      if( mParent->GetItem( item ) )
-      {
-         flag |= wxACC_STATE_SYSTEM_SELECTABLE;
-
-         long state = item.GetState();
-
-         if( state & wxLIST_STATE_FOCUSED )
-         {
-            flag |= wxACC_STATE_SYSTEM_FOCUSED;
-         }
-
-         if( state & wxLIST_STATE_SELECTED )
-         {
-            flag |= wxACC_STATE_SYSTEM_SELECTED;
-         }
-
-         if( item.GetImage() != 0 )
-         {
-            flag |= wxACC_STATE_SYSTEM_CHECKED;
-         }
-      }
+      return mType;
    }
 
-   *state = flag;
-
-   return wxACC_OK;
-}
-
-// Returns a localized string representing the value for the object
-// or child.
-wxAccStatus CheckListAx::GetValue( int childId, wxString *strValue )
-{
-   if( childId == 0 )
+   bool IsInteractive()
    {
-      return wxACC_OK;
+      return mInteractive;
    }
-   else
+
+   bool IsDefault()
    {
-      *strValue = mParent->GetItemText( childId - 1 );
+      return false;
    }
 
-   return wxACC_OK;
-}
+   bool IsLegacy()
+   {
+      return false;
+   }
 
-#endif
+   bool SupportsRealtime()
+   {
+      return mType == EffectTypeProcess;
+   }
 
-class PluginRegistrationDialog:public wxDialog {
- public:
-   // constructors and destructors
-   PluginRegistrationDialog(wxWindow * parent, const wxArrayString & files);
-   virtual ~PluginRegistrationDialog();
- public:
-   void Populate();
-   void PopulateOrExchange( ShuttleGui & S );
+   bool SupportsAutomation()
+   {
+      return mAutomatable;
+   }
 
-   void OnApply(wxCommandEvent & event);
-   void OnCancel(wxCommandEvent & event);
-   void OnListChar(wxKeyEvent & event);
-   void OnListMouseDown(wxMouseEvent & event);
-   void OnSelectAll(wxCommandEvent & event);
-   void OnClearAll(wxCommandEvent & event);
-
-   void SetBoldOrRegular( int i );
-   void SetState(int i, int state);
-   void ToggleItem(int i);
-
-#if wxUSE_ACCESSIBILITY
-   CheckListAx *mAx;
-#endif
-
-   wxListCtrl *mPlugins;
-   wxArrayString mFiles;
-   wxArrayInt miState;
-
-   bool mCancelClicked;
-
-   DECLARE_EVENT_TABLE()
+public:
+   wxString mPath;
+   wxString mName;
+   wxString mVendor;
+   wxString mVersion;
+   wxString mDescription;
+   EffectType mType;
+   bool mInteractive;
+   bool mAutomatable;
 };
 
-
-#define PluginListID       7001
-#define PluginClearAllID   7002
-#define PluginSelectAllID  7003
-
-BEGIN_EVENT_TABLE(PluginRegistrationDialog, wxDialog)
-   EVT_BUTTON(wxID_OK, PluginRegistrationDialog::OnApply)
-   EVT_BUTTON(wxID_CANCEL, PluginRegistrationDialog::OnCancel)
-   EVT_BUTTON(PluginClearAllID, PluginRegistrationDialog::OnClearAll)
-   EVT_BUTTON(PluginSelectAllID, PluginRegistrationDialog::OnSelectAll)
-END_EVENT_TABLE()
-
-PluginRegistrationDialog::PluginRegistrationDialog(wxWindow * parent, const wxArrayString & files):
-   mFiles( files ),
-   wxDialog(parent, wxID_ANY, _("Install VST Effects"),
-            wxDefaultPosition, wxDefaultSize,
-            wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
+// ============================================================================
+//
+// VSTEffectsModule
+//
+// ============================================================================
+VSTEffectsModule::VSTEffectsModule(ModuleManagerInterface *moduleManager,
+                                   const wxString *path)
 {
-   mPlugins = NULL;
-   SetLabel(_("Install VST Effects"));         // Provide visual label
-   SetName(_("Install VST Effects"));          // Provide audible label
-   Populate();
-   SetReturnCode( wxID_OK);
-}
-
-PluginRegistrationDialog::~PluginRegistrationDialog()
-{
-   mPlugins->Disconnect(wxEVT_LEFT_DOWN,
-                        wxMouseEventHandler(PluginRegistrationDialog::OnListMouseDown),
-                        NULL,
-                        this);
-   mPlugins->Disconnect(wxEVT_KEY_DOWN,
-                        wxKeyEventHandler(PluginRegistrationDialog::OnListChar),
-                        NULL,
-                        this);
-}
-
-void PluginRegistrationDialog::Populate()
-{
-   //------------------------- Main section --------------------
-   ShuttleGui S(this, eIsCreating);
-   PopulateOrExchange(S);
-   // ----------------------- End of main section --------------
-}
-
-/// Defines the dialog and does data exchange with it.
-void PluginRegistrationDialog::PopulateOrExchange(ShuttleGui &S)
-{
-   wxImageList * pImageList = new wxImageList( 16, 16 );
-
-#define SHOW_UNCHECKED (0)
-#define SHOW_CHECKED (1)
-#define SHOW_ARROW (2)
-
-#define COL_NAME (0)
-#define COL_PATH (1)
-
-   pImageList->Add(wxIcon(unchecked_xpm));
-   pImageList->Add(wxIcon(checked_xpm));
-   pImageList->Add(wxIcon(arrow15x15_xpm));
-
-   S.StartVerticalLay(true);
+   mModMan = moduleManager;
+   if (path)
    {
-      /*i18n-hint: The dialog shows a list of plugins with check-boxes
-       beside each one.*/
-      S.StartStatic(_("&Select Plug-ins to Install or press ENTER to Install All"), true);
-      {
-         S.SetStyle(wxSUNKEN_BORDER | wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_HRULES | wxLC_VRULES );
-         mPlugins = S.Id(PluginListID).AddListControlReportMode();
-         mPlugins->Connect(wxEVT_LEFT_DOWN,
-                           wxMouseEventHandler(PluginRegistrationDialog::OnListMouseDown),
-                           NULL,
-                           this);
-         mPlugins->Connect(wxEVT_KEY_DOWN,
-                           wxKeyEventHandler(PluginRegistrationDialog::OnListChar),
-                           NULL,
-                           this);
-#if wxUSE_ACCESSIBILITY
-         mAx = new CheckListAx(mPlugins);
-         mPlugins->SetAccessible(mAx);
-#endif
-         mPlugins->AssignImageList( pImageList, wxIMAGE_LIST_SMALL );
-         mPlugins->InsertColumn(COL_NAME, _("Plug-in Name"));
-         mPlugins->InsertColumn(COL_PATH, _("Path"));
-      }
-      S.EndStatic();
-
-      S.StartHorizontalLay(wxALIGN_LEFT | wxEXPAND, false);
-      {
-         S.SetBorder(10);
-         S.StartHorizontalLay(wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL);
-         {
-            S.AddSpace(12);
-            S.SetBorder(6);
-            S.Id(PluginSelectAllID).AddButton(_("Select &All"));
-            S.Id(PluginClearAllID).AddButton(_("Clea&r All"));
-         }
-         S.EndHorizontalLay();
-
-         S.StartHorizontalLay(wxALIGN_CENTER | wxEXPAND);
-         {
-            S.AddSpace(1);
-         }
-         S.EndHorizontalLay();
-
-         S.AddStandardButtons(eOkButton | eCancelButton);
-      }
-      S.EndHorizontalLay();
+      mPath = *path;
    }
-   S.EndVerticalLay();
+}
 
-   // The dc is used to compute the text width in pixels.
-   // FIXME: That works fine for PC, but apparently comes out too small for wxMAC.
-   // iLen is minimum width in pixels shown for the file names.  200 is reasonable.
-   int iNameLen = 0;
-   int iPathLen = 0;
-   int x, y;
-   wxRect iconrect;
-   for (int i = 0; i < (int)mFiles.GetCount(); i++)
+VSTEffectsModule::~VSTEffectsModule()
+{
+   mPath = wxEmptyString;
+}
+
+// ============================================================================
+// IdentInterface implementation
+// ============================================================================
+
+wxString VSTEffectsModule::GetPath()
+{
+   return mPath;
+}
+
+wxString VSTEffectsModule::GetSymbol()
+{
+   return wxT("VST Effects");
+}
+
+wxString VSTEffectsModule::GetName()
+{
+   return _("VST Effects");
+}
+
+wxString VSTEffectsModule::GetVendor()
+{
+   return _("The Audacity Team");
+}
+
+wxString VSTEffectsModule::GetVersion()
+{
+   // This "may" be different if this were to be maintained as a separate DLL
+   return AUDACITY_VERSION_STRING;
+}
+
+wxString VSTEffectsModule::GetDescription()
+{
+   return _("Adds the ability to use VST effects in Audacity.");
+}
+
+// ============================================================================
+// ModuleInterface implementation
+// ============================================================================
+
+bool VSTEffectsModule::Initialize()
+{
+   // Nothing to do here
+   return true;
+}
+
+void VSTEffectsModule::Terminate()
+{
+   // Nothing to do here
+   return;
+}
+
+bool VSTEffectsModule::AutoRegisterPlugins(PluginManagerInterface & WXUNUSED(pm))
+{
+   // We don't auto-register
+   return true;
+}
+
+wxArrayString VSTEffectsModule::FindPlugins(PluginManagerInterface & pm)
+{
+   wxArrayString pathList;
+   wxArrayString files;
+
+   // Check for the VST_PATH environment variable
+   wxString vstpath = wxString::FromUTF8(getenv("VST_PATH"));
+   if (!vstpath.empty())
    {
-      miState.Add( SHOW_CHECKED );
-
-      wxFileName fn(mFiles[i]);
-      wxString name( fn.GetName() );
-      wxString path( fn.GetFullPath() );
-
-      mPlugins->InsertItem( i, name, SHOW_CHECKED );
-      mPlugins->SetItem( i, COL_PATH, path );
-
-      // Only need to get the icon width once
-      if (i == 0)
+      wxStringTokenizer tok(vstpath);
+      while (tok.HasMoreTokens())
       {
-#if defined(__WXMAC__)
-         // wxMac doesn't return the ICON rectangle.  It returns the
-         // rectangle for the first column and that even comes back
-         // with negative numbers sometimes.
-         //
-         // So, just guess.
-         wxIcon i1(unchecked_xpm);
-         wxIcon i2(checked_xpm);
-         wxIcon i3(arrow15x15_xpm);
-         iconrect.x = 4;
-         iconrect.width = wxMax(wxMax(i1.GetWidth(), i2.GetWidth()), i3.GetWidth());
+         pathList.Add(tok.GetNextToken());
+      }
+   }
+
+#if defined(__WXMAC__)  
+#define VSTPATH wxT("/Library/Audio/Plug-Ins/VST")
+
+   // Look in ~/Library/Audio/Plug-Ins/VST and /Library/Audio/Plug-Ins/VST
+   pathList.Add(wxGetHomeDir() + wxFILE_SEP_PATH + VSTPATH);
+   pathList.Add(VSTPATH);
+
+   // Recursively search all paths for Info.plist files.  This will identify all
+   // bundles.
+   pm.FindFilesInPathList(wxT("Info.plist"), pathList, files, true);
+
+   // Remove the 'Contents/Info.plist' portion of the names
+   for (size_t i = 0; i < files.GetCount(); i++)
+   {
+      files[i] = wxPathOnly(wxPathOnly(files[i]));
+      if (!files[i].EndsWith(wxT(".vst")))
+      {
+         files.RemoveAt(i--);
+      }
+   }
+
+#elif defined(__WXMSW__)
+
+   TCHAR dpath[MAX_PATH];
+   TCHAR tpath[MAX_PATH];
+   DWORD len;
+
+   // Try HKEY_CURRENT_USER registry key first
+   len = WXSIZEOF(tpath);
+   if (SHRegGetUSValue(wxT("Software\\VST"),
+                       wxT("VSTPluginsPath"),
+                       NULL,
+                       tpath,
+                       &len,
+                       FALSE,
+                       NULL,
+                       0) == ERROR_SUCCESS)
+   {
+      tpath[len] = 0;
+      dpath[0] = 0;
+      ExpandEnvironmentStrings(tpath, dpath, WXSIZEOF(dpath));
+      pathList.Add(dpath);
+   }
+
+   // Then try HKEY_LOCAL_MACHINE registry key
+   len = WXSIZEOF(tpath);
+   if (SHRegGetUSValue(wxT("Software\\VST"),
+                       wxT("VSTPluginsPath"),
+                       NULL,
+                       tpath,
+                       &len,
+                       TRUE,
+                       NULL,
+                       0) == ERROR_SUCCESS)
+   {
+      tpath[len] = 0;
+      dpath[0] = 0;
+      ExpandEnvironmentStrings(tpath, dpath, WXSIZEOF(dpath));
+      pathList.Add(dpath);
+   }
+
+   // Add the default path last
+   dpath[0] = 0;
+   ExpandEnvironmentStrings(wxT("%ProgramFiles%\\Steinberg\\VSTPlugins"),
+                            dpath,
+                            WXSIZEOF(dpath));
+   pathList.Add(dpath);
+
+   // Recursively scan for all DLLs
+   pm.FindFilesInPathList(wxT("*.dll"), pathList, files, true);
+
 #else
-         mPlugins->GetItemRect( i, iconrect, wxLIST_RECT_ICON );
-#endif
-      }
-      mPlugins->GetTextExtent( name, &x, &y );
-      iNameLen = wxMax( iNameLen, x + iconrect.width + (iconrect.x * 2) );
-      mPlugins->GetTextExtent( path, &x, &y );
-      iPathLen = wxMax( iPathLen, x + iconrect.width + (iconrect.x * 2) );
-   }
 
-   mPlugins->SetColumnWidth(COL_NAME, iNameLen + /* fudge */ 5);
-   mPlugins->SetColumnWidth(COL_PATH, iPathLen + /* fudge */ 5);
-
-   //SetBoldOrRegular( miSelected );
-   mPlugins->SetSizeHints( iNameLen + iPathLen + /* fudge */ 15 , 200 );
-   if( mFiles.GetCount() > 0 )
+   // Nothing specified in the VST_PATH environment variable...provide defaults
+   if (vstpath.IsEmpty())
    {
-      // Make sure first item is selected/focused.
-      mPlugins->SetFocus();
-      mPlugins->SetItemState( 0, wxLIST_STATE_FOCUSED|wxLIST_STATE_SELECTED, wxLIST_STATE_FOCUSED|wxLIST_STATE_SELECTED);
-#if wxUSE_ACCESSIBILITY
-      mAx->SetSelected( 0 );
-#endif
-   }
-   Layout();
-   Fit();
-   SetSizeHints(GetSize());
-   // Parent window is usually not there yet, so centre on screen rather than on parent.
-   CenterOnScreen();
+      // We add this "non-default" one
+      pathList.Add(wxT(LIBDIR) wxT("/vst"));
 
+      // These are the defaults used by other hosts
+      pathList.Add(wxT("/usr/lib/vst"));
+      pathList.Add(wxT("/usr/local/lib/vst"));
+      pathList.Add(wxGetHomeDir() + wxFILE_SEP_PATH + wxT(".vst"));
+   }
+
+   // Recursively scan for all shared objects
+   pm.FindFilesInPathList(wxT("*.so"), pathList, files, true);
+
+#endif
+
+   return files;
 }
 
-void PluginRegistrationDialog::OnListMouseDown( wxMouseEvent & event )
+bool VSTEffectsModule::RegisterPlugin(PluginManagerInterface & pm, const wxString & path)
 {
-   wxPoint p = event.GetPosition();
-   int flags = wxLIST_HITTEST_ONITEM;
-   int item = mPlugins->HitTest( p, flags );
+   // TODO:  Fix this for external usage
+   wxString cmdpath = PlatformCompatibility::GetExecutablePath();
 
-   if( item != wxNOT_FOUND )
+   wxString effectIDs = wxT("0;");
+   wxStringTokenizer effectTzr(effectIDs, wxT(";"));
+
+   wxProgressDialog *progress = NULL;
+   size_t idCnt = 0;
+   size_t idNdx = 0;
+
+   bool valid = false;
+   bool cont = true;
+
+   while (effectTzr.HasMoreTokens() && cont)
    {
-      ToggleItem( item );
-   }
+      wxString effectID = effectTzr.GetNextToken();
 
-   event.Skip();
-}
+      wxString cmd;
+      cmd.Printf(wxT("\"%s\" %s \"%s;%s\""), cmdpath.c_str(), VSTCMDKEY, path.c_str(), effectID.c_str());
 
-void PluginRegistrationDialog::OnListChar( wxKeyEvent & event )
-{
-   switch( event.GetKeyCode() )
-   {
-      case WXK_SPACE:
+      VSTSubProcess *proc = new VSTSubProcess();
+      try
       {
-         int iItem = mPlugins->GetNextItem( -1, wxLIST_NEXT_ALL, wxLIST_STATE_FOCUSED);
+         wxExecute(cmd, wxEXEC_SYNC | wxEXEC_NODISABLE, proc);
+      }
+      catch (...)
+      {
+         wxLogMessage(_("VST plugin registration failed for %s\n"), path.c_str());
+         delete proc;
+         return false;
+      }
 
-         if( iItem != wxNOT_FOUND )
+      wxString output;
+      wxStringOutputStream ss(&output);
+      proc->GetInputStream()->Read(ss);
+
+      int keycount = 0;
+      bool haveBegin = false;
+      wxStringTokenizer tzr(output, wxT("\n"));
+      while (tzr.HasMoreTokens())
+      {
+         wxString line = tzr.GetNextToken();
+
+         // Our output may follow any output the plugin may have written.
+         if (!line.StartsWith(OUTPUTKEY))
          {
-            ToggleItem( iItem );
+            continue;
+         }
+
+         long key;
+         if (!line.Mid(wxStrlen(OUTPUTKEY)).BeforeFirst(wxT('=')).ToLong(&key))
+         {
+            continue;
+         }
+         wxString val = line.AfterFirst(wxT('=')).BeforeFirst(wxT('\r'));
+
+         switch (key)
+         {
+            case kKeySubIDs:
+               effectIDs = val;
+               effectTzr.Reinit(effectIDs);
+               idCnt = effectTzr.CountTokens();
+               if (idCnt > 3)
+               {
+                  progress = new wxProgressDialog(_("Scanning Shell VST"),
+                                                  wxString::Format(_("Registering %d of %d: %-64.64s"), 0, idCnt, proc->GetName().c_str()),
+                                                  idCnt,
+                                                  NULL,
+                                                  wxPD_APP_MODAL |
+                                                  wxPD_AUTO_HIDE |
+                                                  wxPD_CAN_ABORT |
+                                                  wxPD_ELAPSED_TIME |
+                                                  wxPD_ESTIMATED_TIME |
+                                                  wxPD_REMAINING_TIME);
+                  progress->Show();
+               }
+            break;
+
+            case kKeyBegin:
+               haveBegin = true;
+               keycount++;
+            break;
+
+            case kKeyName:
+               proc->mName = val;
+               keycount++;
+            break;
+
+            case kKeyPath:
+               proc->mPath = val;
+               keycount++;
+            break;
+
+            case kKeyVendor:
+               proc->mVendor = val;
+               keycount++;
+            break;
+
+            case kKeyVersion:
+               proc->mVersion = val;
+               keycount++;
+            break;
+
+            case kKeyDescription:
+               proc->mDescription = val;
+               keycount++;
+            break;
+
+            case kKeyEffectType:
+               long type;
+               val.ToLong(&type);
+               proc->mType = (EffectType) type;
+               keycount++;
+            break;
+
+            case kKeyInteractive:
+               proc->mInteractive = val.IsSameAs(wxT("1"));
+               keycount++;
+            break;
+
+            case kKeyAutomatable:
+               proc->mAutomatable = val.IsSameAs(wxT("1"));
+               keycount++;
+            break;
+
+            case kKeyEnd:
+            {
+               if (!haveBegin || ++keycount != kKeyEnd)
+               {
+                  keycount = 0;
+                  haveBegin = false;
+                  continue;
+               }
+
+               bool skip = false;
+               if (progress)
+               {
+                  idNdx++;
+                  cont = progress->Update(idNdx,
+                                          wxString::Format(_("Registering %d of %d: %-64.64s"), idNdx, idCnt, proc->GetName().c_str()));
+               }
+
+               if (!skip && cont)
+               {
+                  valid = true;
+                  pm.RegisterEffectPlugin(this, proc);
+               }
+            }
+            break;
+
+            default:
+               keycount = 0;
+               haveBegin = false;
+            break;
          }
       }
-      break;
 
-      case WXK_RETURN:
-         // Don't know why wxListCtrls prevent default dialog action,
-         // but they do, so handle it.
-         EmulateButtonClickIfPresent( GetAffirmativeId() );
-      break;
-
-      default:
-         event.Skip();
-      break;
+      delete proc;
    }
-}
 
-void PluginRegistrationDialog::SetBoldOrRegular( int i )
-{
-   wxFont Font = mPlugins->GetItemFont( i );
-   Font.SetWeight( (miState[i]==SHOW_CHECKED)? wxFONTWEIGHT_BOLD : wxFONTWEIGHT_NORMAL );
-   mPlugins->SetItemFont( i, Font );
-}
-
-// We can't capture mouse clicks, only selected and deselected.
-// Clicking on a selected item does not generate any event.
-// Therefore our workaround solution is to NEVER actually select.
-// So whenever the code tries to , we cancel the selection.
-// That way we continue to get events.
-void PluginRegistrationDialog::SetState(int i, int state)
-{
-   miState[ i ] = state;
-   mPlugins->SetItemImage( i, miState[i] );
-#if wxUSE_ACCESSIBILITY
-   mAx->SetSelected( i );
-#endif
-}
-
-void PluginRegistrationDialog::ToggleItem(int i)
-{
-   SetState( i, miState[ i ] == SHOW_CHECKED ? SHOW_UNCHECKED : SHOW_CHECKED );
-}
-
-void PluginRegistrationDialog::OnSelectAll(wxCommandEvent & WXUNUSED(event))
-{
-   for( size_t i = 0, cnt = miState.GetCount(); i < cnt; i++ )
+   if (progress)
    {
-      SetState(i, SHOW_CHECKED);
+      delete progress;
    }
+
+   return valid;
 }
 
-void PluginRegistrationDialog::OnClearAll(wxCommandEvent & WXUNUSED(event))
+bool VSTEffectsModule::IsPluginValid(const wxString & path)
 {
-   for( size_t i = 0, cnt = miState.GetCount(); i < cnt; i++ )
+   wxString realPath = path.BeforeFirst(wxT(';'));
+   return wxFileName::FileExists(realPath) || wxFileName::DirExists(realPath);
+}
+
+IdentInterface *VSTEffectsModule::CreateInstance(const wxString & path)
+{
+   // For us, the ID is simply the path to the effect
+   return new VSTEffect(path);
+}
+
+void VSTEffectsModule::DeleteInstance(IdentInterface *instance)
+{
+   VSTEffect *effect = dynamic_cast<VSTEffect *>(instance);
+   if (effect)
    {
-      SetState(i, SHOW_UNCHECKED);
+      delete effect;
    }
 }
 
-void PluginRegistrationDialog::OnApply(wxCommandEvent & WXUNUSED(event))
+// ============================================================================
+// ModuleEffectInterface implementation
+// ============================================================================
+
+// ============================================================================
+// VSTEffectsModule implementation
+// ============================================================================
+
+// static
+//
+// Called from reinvokation of Audacity or DLL to check in a separate process
+void VSTEffectsModule::Check(const wxChar *path)
 {
-   mCancelClicked = false;
-   FindWindowById(wxID_OK)->Disable();
-
-   size_t cnt = mFiles.GetCount();
-   for (size_t i = 0; i < cnt && !mCancelClicked; i++) {
-      wxString file = mFiles[i];
-
-      mPlugins->EnsureVisible( i );
-      if( miState[ i ] == SHOW_CHECKED )
+   VSTEffect *effect = new VSTEffect(path);
+   if (effect)
+   {
+      if (effect->SetHost(NULL))
       {
-         mPlugins->SetItemImage( i, SHOW_ARROW );
-         VSTEffect::ScanOnePlugin( file );
-         mPlugins->SetItemImage( i, SHOW_CHECKED );
+         wxArrayInt effectIDs = effect->GetEffectIDs();
+         wxString out;
+
+         if (effectIDs.GetCount() > 0)
+         {
+            wxString subids;
+
+            for (size_t i = 0, cnt = effectIDs.GetCount(); i < cnt; i++)
+            {
+               subids += wxString::Format(wxT("%d;"), effectIDs[i]);
+            }
+
+            out = wxString::Format(wxT("%s%d=%s\n"), OUTPUTKEY, kKeySubIDs, subids.RemoveLast().c_str());
+         }
+         else
+         {
+            out += wxString::Format(wxT("%s%d=%s\n"), OUTPUTKEY, kKeyBegin, wxEmptyString);
+            out += wxString::Format(wxT("%s%d=%s\n"), OUTPUTKEY, kKeyPath, effect->GetPath().c_str());
+            out += wxString::Format(wxT("%s%d=%s\n"), OUTPUTKEY, kKeyName, effect->GetName().c_str());
+            out += wxString::Format(wxT("%s%d=%s\n"), OUTPUTKEY, kKeyVendor, effect->GetVendor().c_str());
+            out += wxString::Format(wxT("%s%d=%s\n"), OUTPUTKEY, kKeyVersion, effect->GetVersion().c_str());
+            out += wxString::Format(wxT("%s%d=%s\n"), OUTPUTKEY, kKeyDescription, effect->GetDescription().c_str());
+            out += wxString::Format(wxT("%s%d=%d\n"), OUTPUTKEY, kKeyEffectType, effect->GetType());
+            out += wxString::Format(wxT("%s%d=%d\n"), OUTPUTKEY, kKeyInteractive, effect->IsInteractive());
+            out += wxString::Format(wxT("%s%d=%d\n"), OUTPUTKEY, kKeyAutomatable, effect->SupportsAutomation());
+            out += wxString::Format(wxT("%s%d=%s\n"), OUTPUTKEY, kKeyEnd, wxEmptyString);
+         }
+
+         // We want to output info in one chunk to prevent output
+         // from the effect intermixing with the info
+         const wxCharBuffer buf = out.ToUTF8();
+         fwrite(buf, 1, strlen(buf), stdout);
+         fflush(stdout);
       }
-      wxYield();
+
+      delete effect;
    }
-
-   EndModal(mCancelClicked ? wxID_CANCEL : wxID_OK);
-}
-
-void PluginRegistrationDialog::OnCancel(wxCommandEvent & WXUNUSED(event))
-{
-   mCancelClicked = true;
-
-   EndModal(mCancelClicked ? wxID_CANCEL : wxID_OK);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-// VSTEffectSettingsDialog
+// VSTEffectOptionsDialog
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-class VSTEffectSettingsDialog:public wxDialog
+class VSTEffectOptionsDialog:public wxDialog
 {
- public:
-   VSTEffectSettingsDialog(wxWindow * parent);
-   virtual ~VSTEffectSettingsDialog();
+public:
+   VSTEffectOptionsDialog(wxWindow * parent, EffectHostInterface *host);
+   virtual ~VSTEffectOptionsDialog();
 
    void PopulateOrExchange(ShuttleGui & S);
 
    void OnOk(wxCommandEvent & evt);
 
- private:
-    int mBufferSize;
+private:
+   EffectHostInterface *mHost;
+   int mBufferSize;
+   bool mUseLatency;
+   bool mUseGUI;
 
-    DECLARE_EVENT_TABLE()
+   DECLARE_EVENT_TABLE()
 };
 
-BEGIN_EVENT_TABLE(VSTEffectSettingsDialog, wxDialog)
-   EVT_BUTTON(wxID_OK, VSTEffectSettingsDialog::OnOk)
+BEGIN_EVENT_TABLE(VSTEffectOptionsDialog, wxDialog)
+   EVT_BUTTON(wxID_OK, VSTEffectOptionsDialog::OnOk)
 END_EVENT_TABLE()
 
-VSTEffectSettingsDialog::VSTEffectSettingsDialog(wxWindow * parent)
-:  wxDialog(parent, wxID_ANY, wxString(_("VST Effect Settings")))
+VSTEffectOptionsDialog::VSTEffectOptionsDialog(wxWindow * parent, EffectHostInterface *host)
+:  wxDialog(parent, wxID_ANY, wxString(_("VST Effect Options")))
 {
-   gPrefs->Read(wxT("/VST/BufferSize"), &mBufferSize, 8192);
+   mHost = host;
 
-   ShuttleGui S(this, eIsCreatingFromPrefs);
+   mHost->GetSharedConfig(wxT("Options"), wxT("BufferSize"), mBufferSize, 8192);
+   mHost->GetSharedConfig(wxT("Options"), wxT("UseLatency"), mUseLatency, true);
+   mHost->GetSharedConfig(wxT("Options"), wxT("UseGUI"), mUseGUI, true);
+
+   ShuttleGui S(this, eIsCreating);
    PopulateOrExchange(S);
 }
 
-VSTEffectSettingsDialog::~VSTEffectSettingsDialog()
+VSTEffectOptionsDialog::~VSTEffectOptionsDialog()
 {
 }
 
-void VSTEffectSettingsDialog::PopulateOrExchange(ShuttleGui & S)
+void VSTEffectOptionsDialog::PopulateOrExchange(ShuttleGui & S)
 {
    S.SetBorder(5);
    S.StartHorizontalLay(wxEXPAND, 1);
@@ -801,7 +765,7 @@ void VSTEffectSettingsDialog::PopulateOrExchange(ShuttleGui & S)
       {
          S.StartStatic(_("Buffer Size"));
          {
-            wxIntegerValidator<int> vld(&mBufferSize);
+            IntegerValidator<int> vld(&mBufferSize);
             vld.SetRange(8, 1048576 * 1);
 
             S.AddVariableText(wxString() +
@@ -815,8 +779,8 @@ void VSTEffectSettingsDialog::PopulateOrExchange(ShuttleGui & S)
             {
                wxTextCtrl *t;
                t = S.TieNumericTextBox(_("&Buffer Size (8 to 1048576 samples):"),
-                                       wxT("/VST/BufferSize"),
-                                       wxT(""), 12);
+                                       mBufferSize,
+                                       12);
                t->SetMinSize(wxSize(100, -1));
                t->SetValidator(vld);
             }
@@ -824,18 +788,19 @@ void VSTEffectSettingsDialog::PopulateOrExchange(ShuttleGui & S)
          }
          S.EndStatic();
 
-         S.StartStatic(_("Buffer Delay Compensation"));
+         S.StartStatic(_("Latency Compensation"));
          {
             S.AddVariableText(wxString() +
                _("As part of their processing, some VST effects must delay returning ") +
                _("audio to Audacity. When not compensating for this delay, you will ") +
                _("notice that small silences have been inserted into the audio. ") +
-               _("Enabling this setting will provide that compensation, but it may ") +
+               _("Enabling this option will provide that compensation, but it may ") +
                _("not work for all VST effects."))->Wrap(650);
 
             S.StartHorizontalLay(wxALIGN_LEFT);
             {
-               S.TieCheckBox(_("Enable &compensation"), wxT("/VST/UseBufferDelay"), true);
+               S.TieCheckBox(_("Enable &compensation"),
+                             mUseLatency);
             }
             S.EndHorizontalLay();
          }
@@ -843,23 +808,12 @@ void VSTEffectSettingsDialog::PopulateOrExchange(ShuttleGui & S)
 
          S.StartStatic(_("Graphical Mode"));
          {
-            S.AddVariableText(
-               wxString() +
+            S.AddVariableText(wxString() +
                _("Most VST effects have a graphical interface for setting parameter values.") +
                _(" A basic text-only method is also available. ") +
                _(" Reopen the effect for this to take effect."))->Wrap(650);
-            S.TieCheckBox(_("Enable &Graphical Mode"), wxT("/VST/GUI"), true);
-         }
-         S.EndStatic();
-
-         S.StartStatic(_("Rescan Effects"));
-         {
-            S.AddVariableText(wxString() +
-               _("To improve Audacity startup, a search for VST effects is performed ") +
-               _("once and relevant information is recorded. When you add VST effects ") +
-               _("to your system, you need to tell Audacity to rescan so the new ") +
-               _("information can be recorded."))->Wrap(650);
-            S.TieCheckBox(_("&Rescan effects on next launch"), wxT("/VST/Rescan"), false);
+            S.TieCheckBox(_("Enable &graphical interface"),
+                          mUseGUI);
          }
          S.EndStatic();
       }
@@ -874,141 +828,137 @@ void VSTEffectSettingsDialog::PopulateOrExchange(ShuttleGui & S)
    Center();
 }
 
-void VSTEffectSettingsDialog::OnOk(wxCommandEvent & WXUNUSED(evt))
+void VSTEffectOptionsDialog::OnOk(wxCommandEvent & WXUNUSED(evt))
 {
-   if (!Validate()) {
+   if (!Validate())
+   {
       return;
    }
 
-   ShuttleGui S(this, eIsSavingToPrefs);
+   ShuttleGui S(this, eIsGettingFromDialog);
    PopulateOrExchange(S);
+
+   mHost->SetSharedConfig(wxT("Options"), wxT("BufferSize"), mBufferSize);
+   mHost->SetSharedConfig(wxT("Options"), wxT("UseLatency"), mUseLatency);
+   mHost->SetSharedConfig(wxT("Options"), wxT("UseGUI"), mUseGUI);
 
    EndModal(wxID_OK);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-// VSTEffectDialog
+// VSTEffectTimer
 //
 ///////////////////////////////////////////////////////////////////////////////
-DECLARE_LOCAL_EVENT_TYPE(EVT_SIZEWINDOW, -1);
-DEFINE_LOCAL_EVENT_TYPE(EVT_SIZEWINDOW);
-DECLARE_LOCAL_EVENT_TYPE(EVT_UPDATEDISPLAY, -1);
-DEFINE_LOCAL_EVENT_TYPE(EVT_UPDATEDISPLAY);
 
-class VSTEffectDialog:public wxDialog, XMLTagHandler
+class VSTEffectTimer : public wxTimer
 {
- public:
-   VSTEffectDialog(wxWindow * parent,
-                   const wxString & title,
-                   VSTEffect *effect,
-                   AEffect *aeffect);
-   virtual ~VSTEffectDialog();
+public:
+   VSTEffectTimer(VSTEffect *effect)
+   :  wxTimer(),
+      mEffect(effect)
+   {
+   }
 
-   void RemoveHandler();
+   ~VSTEffectTimer()
+   {
+   }
 
-   void OnProgram(wxCommandEvent & evt);
-   void OnProgramText(wxCommandEvent & evt);
-   void OnLoad(wxCommandEvent & evt);
-   void OnSave(wxCommandEvent & evt);
-   void OnSettings(wxCommandEvent & evt);
-
-   void OnSlider(wxCommandEvent &event);
-
-   void OnOk(wxCommandEvent & evt);
-   void OnCancel(wxCommandEvent & evt);
-   void OnClose(wxCloseEvent & evt);
-   void OnPreview(wxCommandEvent & evt);
-
-   void OnSizeWindow(wxCommandEvent & evt);
-   void OnUpdateDisplay(wxCommandEvent & evt);
+   void Notify()
+   {
+      mEffect->OnTimer();
+   }
 
 private:
-
-   void BuildPlain();
-   void BuildFancy();
-   wxSizer *BuildProgramBar();
-   void RefreshParameters(int skip = -1);
-
-   virtual bool HandleXMLTag(const wxChar *tag, const wxChar **attrs);
-   virtual void HandleXMLEndTag(const wxChar *tag);
-   virtual void HandleXMLContent(const wxString & content);
-   virtual XMLTagHandler *HandleXMLChild(const wxChar *tag);
-   wxString b64encode(const void *in, int len);
-   int b64decode(wxString in, void *out);
-
    VSTEffect *mEffect;
-   AEffect *mAEffect;
-
-   bool mGui;
-
-#if defined(__WXMAC__)
-   wxSizerItem *mContainer;
-#elif defined(__WXMSW__)
-   wxSizerItem *mContainer;
-#else
-   wxSizerItem *mContainer;
-#endif
-
-   wxComboBox *mProgram;
-   wxStaticText **mNames;
-   wxSlider **mSliders;
-   wxStaticText **mDisplays;
-   wxStaticText **mLabels;
-
-   bool mInChunk;
-   wxString mChunk;
-
-#if defined(__WXMAC__)
-   static pascal OSStatus OverlayEventHandler(EventHandlerCallRef handler, EventRef event, void *data);
-   OSStatus OnOverlayEvent(EventHandlerCallRef handler, EventRef event);
-   static pascal OSStatus WindowEventHandler(EventHandlerCallRef handler, EventRef event, void *data);
-   OSStatus OnWindowEvent(EventHandlerCallRef handler, EventRef event);
-
-   WindowRef mOverlayRef;
-   EventHandlerUPP mOverlayEventHandlerUPP;
-   EventHandlerRef mOverlayEventHandlerRef;
-   bool mOverlayEventsBlocked;
-
-   WindowRef mWindowRef;
-   EventHandlerUPP mWindowEventHandlerUPP;
-   EventHandlerRef mWindowEventHandlerRef;
-
-   WindowRef mPreviousRef;
-
-#endif
-
-   DECLARE_EVENT_TABLE()
 };
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// LadspaEffectEventHelper
+//
+///////////////////////////////////////////////////////////////////////////////
 
 enum
 {
-   ID_VST_PROGRAM = 11000,
-   ID_VST_LOAD,
-   ID_VST_SAVE,
-   ID_VST_SLIDERS,
-   ID_VST_SETTINGS
+   ID_DURATION = 20000,
+   ID_SLIDERS = 21000,
 };
 
-BEGIN_EVENT_TABLE(VSTEffectDialog, wxDialog)
-   EVT_BUTTON(wxID_OK, VSTEffectDialog::OnOk)
-   EVT_BUTTON(wxID_CANCEL, VSTEffectDialog::OnCancel)
-   EVT_BUTTON(ID_EFFECT_PREVIEW, VSTEffectDialog::OnPreview)
-
-   EVT_COMBOBOX(ID_VST_PROGRAM, VSTEffectDialog::OnProgram)
-   EVT_TEXT(ID_VST_PROGRAM, VSTEffectDialog::OnProgramText)
-   EVT_BUTTON(ID_VST_LOAD, VSTEffectDialog::OnLoad)
-   EVT_BUTTON(ID_VST_SAVE, VSTEffectDialog::OnSave)
-   EVT_BUTTON(ID_VST_SETTINGS, VSTEffectDialog::OnSettings)
-
-   EVT_SLIDER(wxID_ANY, VSTEffectDialog::OnSlider)
+BEGIN_EVENT_TABLE(VSTEffectEventHelper, wxEvtHandler)
+   EVT_COMMAND_RANGE(ID_SLIDERS, ID_SLIDERS + 999, wxEVT_COMMAND_SLIDER_UPDATED, VSTEffectEventHelper::OnSlider)
 
    // Events from the audioMaster callback
-   EVT_COMMAND(wxID_ANY, EVT_SIZEWINDOW, VSTEffectDialog::OnSizeWindow)
-   EVT_COMMAND(wxID_ANY, EVT_UPDATEDISPLAY, VSTEffectDialog::OnUpdateDisplay)
+   EVT_COMMAND(wxID_ANY, EVT_SIZEWINDOW, VSTEffectEventHelper::OnSizeWindow)
 END_EVENT_TABLE()
 
+VSTEffectEventHelper::VSTEffectEventHelper(VSTEffect *effect)
+{
+   mEffect = effect;
+}
+
+VSTEffectEventHelper::~VSTEffectEventHelper()
+{
+}
+
+// ============================================================================
+// VSTEffectEventHelper implementation
+// ============================================================================
+
+void VSTEffectEventHelper::OnSlider(wxCommandEvent & evt)
+{
+   mEffect->OnSlider(evt);
+}
+
+void VSTEffectEventHelper::OnSizeWindow(wxCommandEvent & evt)
+{
+   mEffect->OnSizeWindow(evt);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// VSTEffect
+//
+///////////////////////////////////////////////////////////////////////////////
+
+DEFINE_LOCAL_EVENT_TYPE(EVT_SIZEWINDOW);
+DEFINE_LOCAL_EVENT_TYPE(EVT_UPDATEDISPLAY);
+
 #if defined(__WXMAC__)
+
+// To use, change the SDK in the project to at least 10.5
+extern void DebugPrintControlHierarchy(WindowRef inWindow);
+extern void DebugPrintWindowList(void);
+
+// Event handler to track when the mouse enters/exits the various view
+static const EventTypeSpec trackingEventList[] =
+{                             
+   {kEventClassControl, kEventControlTrackingAreaEntered},
+   {kEventClassControl, kEventControlTrackingAreaExited},
+};                            
+                              
+pascal OSStatus VSTEffect::TrackingEventHandler(EventHandlerCallRef handler, EventRef event, void *data)
+{
+   return ((VSTEffect *)data)->OnTrackingEvent(event);
+}
+
+OSStatus VSTEffect::OnTrackingEvent(EventRef event)
+{
+   OSStatus result = eventNotHandledErr;
+   
+   if (GetEventKind(event) == kEventControlTrackingAreaEntered)
+   {
+      // Should we save the existing cursor???
+      SetThemeCursor(kThemeArrowCursor);
+   }
+
+   if (GetEventKind(event) == kEventControlTrackingAreaExited)
+   {
+      // Possibly restore a saved cursor
+   }
+
+   return result;
+}
 
 // ----------------------------------------------------------------------------
 // Most of the following is used to deal with VST effects that create an overlay
@@ -1037,9 +987,10 @@ END_EVENT_TABLE()
 // Events to be captured in the overlay window
 static const EventTypeSpec OverlayEventList[] =
 {
+#if !defined(EXPERIMENTAL_REALTIME_EFFECTS)
    { kEventClassWindow, kEventWindowGetClickModality },
-   { kEventClassWindow, kEventWindowHandleActivate },
-   { kEventClassWindow, kEventWindowActivated },
+#endif
+#if 0
    { kEventClassMouse,  kEventMouseDown },
    { kEventClassMouse,  kEventMouseUp },
    { kEventClassMouse,  kEventMouseMoved },
@@ -1047,18 +998,19 @@ static const EventTypeSpec OverlayEventList[] =
    { kEventClassMouse,  kEventMouseEntered },
    { kEventClassMouse,  kEventMouseExited },
    { kEventClassMouse,  kEventMouseWheelMoved },
+#endif
 };
 
 // Overlay window event handler callback thunk
-pascal OSStatus VSTEffectDialog::OverlayEventHandler(EventHandlerCallRef handler, EventRef event, void *data)
+pascal OSStatus VSTEffect::OverlayEventHandler(EventHandlerCallRef handler, EventRef event, void *data)
 {
-   return ((VSTEffectDialog *)data)->OnOverlayEvent(handler, event);
+   return ((VSTEffect *)data)->OnOverlayEvent(handler, event);
 }
 
 // Overlay window event handler
-OSStatus VSTEffectDialog::OnOverlayEvent(EventHandlerCallRef handler, EventRef event)
+OSStatus VSTEffect::OnOverlayEvent(EventHandlerCallRef handler, EventRef event)
 {
-   // Get the current window in from of all the rest non-floaters.
+   // Get the current window in front of all the rest of the non-floaters.
    WindowRef frontwin = FrontNonFloatingWindow();
 
    // Get the target window of the event
@@ -1073,7 +1025,7 @@ OSStatus VSTEffectDialog::OnOverlayEvent(EventHandlerCallRef handler, EventRef e
 
 #if defined(DEBUG_VST)
    int cls = GetEventClass(event);
-   printf("WINDOW class %4.4s kind %d ewin %p owin %p mwin %p anf %p fnf %p\n",
+   printf("OVERLAY class %4.4s kind %d ewin %p owin %p mwin %p anf %p fnf %p\n",
       &cls,
       GetEventKind(event),
       evtwin,
@@ -1083,16 +1035,53 @@ OSStatus VSTEffectDialog::OnOverlayEvent(EventHandlerCallRef handler, EventRef e
       frontwin);
 #endif
 
+   bool block = false;
+   WindowModality kind;
+   WindowRef ref = NULL;
+   GetWindowModality(frontwin, &kind, &ref);
+
+   switch (kind)
+   {
+      case kWindowModalityNone:
+      {
+         // Allow
+      }
+      break;
+
+      case kWindowModalityWindowModal:
+      {
+         if (ref == mWindowRef || ref == mOverlayRef)
+         {
+            block = true;
+         }
+      }
+      break;
+
+      case kWindowModalitySystemModal:
+      case kWindowModalityAppModal:
+      {
+         if (frontwin != mWindowRef && frontwin != mOverlayRef)
+         {
+            block = true;
+         }
+      }
+      break;
+   }
+
    // We must block mouse events because plugins still act on mouse
    // movement and drag events, even if they are supposed to be disabled
    // due to other modal dialogs (like when Load or Settings are clicked).
-   if (GetEventClass(event) == kEventClassMouse) {
-      if (mOverlayEventsBlocked) {
+   if (GetEventClass(event) == kEventClassMouse)
+   {
+      if (block)
+      {
          return noErr;
       }
+      
+      return eventNotHandledErr;
    }
 
-   // Only kEventClassWindow event at this poine
+   // Only kEventClassWindow events at this point
    switch (GetEventKind(event))
    {
       // The system is asking if the target of an upcoming event
@@ -1100,27 +1089,11 @@ OSStatus VSTEffectDialog::OnOverlayEvent(EventHandlerCallRef handler, EventRef e
       //
       // We allow it when the overlay window or our window is the
       // curret top window.  Any other windows would mean that a
-      // modal dialog box has been open on top and we should block.
+      // modal dialog box has been opened on top and we should block.
       case kEventWindowGetClickModality:
       {
-         HIModalClickResult res = kHIModalClickIsModal;
-         WindowRef ref = mWindowRef;
-
-         // Allow it to pass?
-         if (frontwin == mWindowRef | frontwin == mOverlayRef) {
-            res |= kHIModalClickAllowEvent; // | kHIModalClickRaiseWindow;
-            mOverlayEventsBlocked = false;
-         }
-         // No, block it
-         else {
-            res |= kHIModalClickAnnounce;
-            ref = frontwin;
-            mOverlayEventsBlocked = true;
-         }
-
-         // Get the kind of modal block from the modal window
-         WindowModality kind;
-         GetWindowModality(ref, &kind, NULL);
+         // Announce the event may need blocking
+         HIModalClickResult res = block ? kHIModalClickIsModal | kHIModalClickAnnounce : 0;
 
          // Set the return parameters
          SetEventParameter(event,
@@ -1141,15 +1114,14 @@ OSStatus VSTEffectDialog::OnOverlayEvent(EventHandlerCallRef handler, EventRef e
                            sizeof(res),
                            &res);
 
-         return noErr;
-      }
-      break;
-
-      // Ignore the activate events to (sort of) keep our window as
-      // the active one
-      case kEventWindowHandleActivate:
-      case kEventWindowActivated:
-      {
+#if !defined(EXPERIMENTAL_REALTIME_EFFECTS)
+         // If the front window is the overlay, then make our window
+         // the selected one so that the mouse click goes to it instead.
+         if (frontwin == mOverlayRef)
+         {
+            SelectWindow(mWindowRef);
+         }
+#endif
          return noErr;
       }
       break;
@@ -1161,21 +1133,28 @@ OSStatus VSTEffectDialog::OnOverlayEvent(EventHandlerCallRef handler, EventRef e
 // Events to be captured in the our window
 static const EventTypeSpec WindowEventList[] =
 {
+   { kEventClassWindow, kEventWindowGetClickModality },
    { kEventClassWindow, kEventWindowShown },
    { kEventClassWindow, kEventWindowClose },
-   { kEventClassWindow, kEventWindowGetClickModality },
-   { kEventClassWindow, kEventWindowHandleDeactivate },
-   { kEventClassWindow, kEventWindowDeactivated },
+#if 0
+   { kEventClassMouse,  kEventMouseDown },
+   { kEventClassMouse,  kEventMouseUp },
+   { kEventClassMouse,  kEventMouseMoved },
+   { kEventClassMouse,  kEventMouseDragged },
+   { kEventClassMouse,  kEventMouseEntered },
+   { kEventClassMouse,  kEventMouseExited },
+   { kEventClassMouse,  kEventMouseWheelMoved },
+#endif
 };
 
 // Our window event handler callback thunk
-pascal OSStatus VSTEffectDialog::WindowEventHandler(EventHandlerCallRef handler, EventRef event, void *data)
+pascal OSStatus VSTEffect::WindowEventHandler(EventHandlerCallRef handler, EventRef event, void *data)
 {
-   return ((VSTEffectDialog *)data)->OnWindowEvent(handler, event);
+   return ((VSTEffect *)data)->OnWindowEvent(handler, event);
 }
 
 // Our window event handler
-OSStatus VSTEffectDialog::OnWindowEvent(EventHandlerCallRef handler, EventRef event)
+OSStatus VSTEffect::OnWindowEvent(EventHandlerCallRef handler, EventRef event)
 {
    // Get the current window in from of all the rest non-floaters.
    WindowRef frontwin = FrontNonFloatingWindow();
@@ -1202,16 +1181,62 @@ OSStatus VSTEffectDialog::OnWindowEvent(EventHandlerCallRef handler, EventRef ev
       frontwin);
 #endif
 
-   // Only kEventClassWindow event at this poine
+   bool block = false;
+   WindowModality kind;
+   WindowRef ref = NULL;
+   GetWindowModality(frontwin, &kind, &ref);
+
+   switch (kind)
+   {
+      case kWindowModalityNone:
+      {
+         // Allow
+      }
+      break;
+
+      case kWindowModalityWindowModal:
+      {
+         if (ref == mWindowRef || ref == mOverlayRef)
+         {
+            block = true;
+         }
+      }
+      break;
+
+      case kWindowModalitySystemModal:
+      case kWindowModalityAppModal:
+      {
+         if (frontwin != mWindowRef && frontwin != mOverlayRef)
+         {
+            block = true;
+         }
+      }
+      break;
+   }
+
+   // We must block mouse events because plugins still act on mouse
+   // movement and drag events, even if they are supposed to be disabled
+   // due to other modal dialogs (like when Load or Settings are clicked).
+   if (GetEventClass(event) == kEventClassMouse)
+   {
+      if (block)
+      {
+         return noErr;
+      }
+
+      return eventNotHandledErr;
+   }
+
+   // Only kEventClassWindow events at this point
    switch (GetEventKind(event))
    {
-      // If we don't capture the close event Audacity, will crash attermination
+      // If we don't capture the close event, Audacity will crash at termination
       // since the window is still on the wxWidgets toplevel window lists, but
-      // it's already gone.
+      // it has already been deleted from the system.
       case kEventWindowClose:
       {
          RemoveHandler();
-         Close();
+         mDialog->Close();
          return noErr;
       }
       break;
@@ -1224,16 +1249,19 @@ OSStatus VSTEffectDialog::OnWindowEvent(EventHandlerCallRef handler, EventRef ev
       case kEventWindowShown:
       {
          // Have an overlay?
-         mOverlayRef = GetPreviousWindow(mWindowRef);
-         if (mOverlayRef == mPreviousRef) {
-            mOverlayRef = mWindowRef;
-         }
+         WindowRef newprev = GetPreviousWindow(mWindowRef);
 
-         if (mOverlayRef != mWindowRef)
+         if (newprev != mPreviousRef)
          {
-            // Try again
+            // We have an overlay
+            mOverlayRef = newprev;
 
-            // Install the handler
+            // Set our window's activatino scope to make sure it alway
+            // stays active.
+            SetWindowActivationScope(mWindowRef,
+                                     kWindowActivationScopeIndependent);
+
+            // Install the overlay handler
             mOverlayEventHandlerUPP = NewEventHandlerUPP(OverlayEventHandler);
             InstallWindowEventHandler(mOverlayRef,
                                       mOverlayEventHandlerUPP,
@@ -1241,6 +1269,30 @@ OSStatus VSTEffectDialog::OnWindowEvent(EventHandlerCallRef handler, EventRef ev
                                       OverlayEventList,
                                       this,
                                       &mOverlayEventHandlerRef);
+
+            ControlRef root = HIViewGetRoot(mOverlayRef);
+            HIViewRef view;
+            HIViewFindByID(root, kHIViewWindowContentID, &view);
+            InstallControlEventHandler(root,
+                                       mTrackingHandlerUPP,
+                                       GetEventTypeCount(trackingEventList),
+                                       trackingEventList,
+                                       this,
+                                       &mOverlayRootTrackingHandlerRef);
+            InstallControlEventHandler(view,
+                                       mTrackingHandlerUPP,
+                                       GetEventTypeCount(trackingEventList),
+                                       trackingEventList,
+                                       this,
+                                       &mOverlayViewTrackingHandlerRef);
+            HIViewNewTrackingArea(root, NULL, 0, NULL);
+            HIViewNewTrackingArea(view, NULL, 0, NULL);
+
+//#if !defined(EXPERIMENTAL_REALTIME_EFFECTS)
+            // Since we set the activation scope to independent,
+            // we need to make sure the overlay gets activated.
+            ActivateWindow(mOverlayRef, TRUE);
+//#endif
          }
       }
       break;
@@ -1250,30 +1302,11 @@ OSStatus VSTEffectDialog::OnWindowEvent(EventHandlerCallRef handler, EventRef ev
       //
       // We allow it when the overlay window or our window is the
       // curret top window.  Any other windows would mean that a
-      // modal dialog box has been open on top and we should block.
+      // modal dialog box has been opened on top and we should block.
       case kEventWindowGetClickModality:
       {
-         // No overlay present, so leave this up to the system
-         if (mOverlayRef == mWindowRef) {
-            break;
-         }
-
-         HIModalClickResult res = kHIModalClickIsModal;
-         WindowRef ref = mWindowRef;
-
-         // Allow it to pass?
-         if (frontwin == mWindowRef | frontwin == mOverlayRef) {
-            res |= kHIModalClickAllowEvent; // | kHIModalClickRaiseWindow;
-         }
-         // No, block it
-         else {
-            res |= kHIModalClickAnnounce;
-            ref = frontwin;
-         }
-
-         // Get the kind of modal block from the modal window
-         WindowModality kind;
-         GetWindowModality(ref, &kind, NULL);
+         // Announce the event may need blocking
+         HIModalClickResult res = block ? kHIModalClickIsModal | kHIModalClickAnnounce : 0;
 
          // Set the return parameters
          SetEventParameter(event,
@@ -1294,27 +1327,17 @@ OSStatus VSTEffectDialog::OnWindowEvent(EventHandlerCallRef handler, EventRef ev
                            sizeof(res),
                            &res);
 
-         // The mouse click will activate the our window, but we want any
-         // control underneath the mouse to get the click instead.  Activating
-         // the main window here will allow the click to pass through to the
-         // control.
-         ActivateWindow(ref, TRUE);
-
-         return noErr;
-      }
-      break;
-
-      // Instead of deactivating our window, we actually do the opposite by
-      // activate it.  This helps to ensure it says highlighted and raised.
-      case kEventWindowHandleDeactivate:
-      case kEventWindowDeactivated:
-      {
-         // No overlay present, so leave this up to the system
-         if (mOverlayRef == mWindowRef) {
-            break;
+         if (mOverlayRef)
+         {
+            // If the front window is the overlay, then make our window
+            // the selected one so that the mouse click go to it instead.
+            WindowRef act = ActiveNonFloatingWindow();
+            if (frontwin == mOverlayRef || act == NULL || act == mOverlayRef)
+            {
+               SelectWindow(mWindowRef);
+            }
          }
 
-         ActivateWindow(mWindowRef, TRUE);
          return noErr;
       }
       break;
@@ -1324,1148 +1347,28 @@ OSStatus VSTEffectDialog::OnWindowEvent(EventHandlerCallRef handler, EventRef ev
 }
 #endif
 
-VSTEffectDialog::VSTEffectDialog(wxWindow *parent,
-                                 const wxString & title,
-                                 VSTEffect *effect,
-                                 AEffect *aeffect)
-:  wxDialog(parent, wxID_ANY, title),
-   mEffect(effect),
-   mAEffect(aeffect)
-{
-   mNames = NULL;
-   mSliders = NULL;
-   mDisplays = NULL;
-   mLabels = NULL;
-   mContainer = NULL;
-
-#if defined(__WXMAC__)
-   mOverlayRef = 0;
-   mOverlayEventHandlerUPP = 0;
-   mOverlayEventHandlerRef = 0;
-   mOverlayEventsBlocked = true;
-
-   mWindowRef = 0;
-   mWindowEventHandlerUPP = 0;
-   mWindowEventHandlerRef = 0;
-#endif
-
-   // Determine if the VST editor is supposed to be used or not
-   mGui = (gPrefs->Read(wxT("/VST/GUI"), (long) true) != 0) &&
-          mAEffect->flags & effFlagsHasEditor;
-
-   // Must use the GUI editor if parameters aren't provided
-   if (mAEffect->numParams == 0 && mAEffect->flags & effFlagsHasEditor)
-   {
-      mGui = true;
-   }
-
 #if defined(__WXGTK__)
-   // Let the user know that a GUI interface is not supported in wxGTK
-   if (mGui) {
-      wxMessageBox(_("VST GUI interfaces are currently unsupported on Linux"),
-                   _("VST Effect"));
-      mGui = false;
-   }
+
+static int trappedErrorCode = 0;
+static int X11TrapHandler(Display *, XErrorEvent *err)
+{
+    return 0;
+}
 #endif
 
-   // Build the appropriate dialog type
-   if (mGui) {
-      BuildFancy();
-   }
-   else {
-      BuildPlain();
-   }
-}
-
-VSTEffectDialog::~VSTEffectDialog()
-{
-   RemoveHandler();
-
-   if (mNames) {
-      delete [] mNames;
-   }
-
-   if (mSliders) {
-      delete [] mSliders;
-   }
-
-   if (mDisplays) {
-      delete [] mDisplays;
-   }
-
-   if (mLabels) {
-      delete [] mLabels;
-   }
-}
-
-void VSTEffectDialog::RemoveHandler()
-{
-#if defined(__WXMAC__)
-   if (mOverlayEventHandlerRef) {
-      ::RemoveEventHandler(mOverlayEventHandlerRef);
-      mOverlayEventHandlerRef = 0;
-   }
-
-   if (mOverlayEventHandlerUPP) {
-      DisposeEventHandlerUPP(mOverlayEventHandlerUPP);
-      mOverlayEventHandlerUPP = 0;
-   }
-
-   if (mWindowEventHandlerRef) {
-      ::RemoveEventHandler(mWindowEventHandlerRef);
-      mWindowEventHandlerRef = 0;
-      MacInstallTopLevelWindowEventHandler();
-   }
-
-   if (mWindowEventHandlerUPP) {
-      DisposeEventHandlerUPP(mWindowEventHandlerUPP);
-      mWindowEventHandlerUPP = 0;
-   }
-#endif
-}
-
-void VSTEffectDialog::BuildFancy()
-{
-   struct
-   {
-      short top, left, bottom, right;
-   } *rect;
-
-   // Some effects like to have us get their rect before opening them.
-   mEffect->callDispatcher(effEditGetRect, 0, 0, &rect, 0.0);
-
-#if defined(__WXMAC__)
-
-   // Retrieve the current window and the one above it.  The window list
-   // is kept in top-most to bottom-most order, so we'll use that to
-   // determine if another window was opened above ours.
-   mWindowRef = (WindowRef) MacGetWindowRef();
-   mPreviousRef = GetPreviousWindow(mWindowRef);
-
-   // Install the event handler on our window
-   mWindowEventHandlerUPP = NewEventHandlerUPP(WindowEventHandler);
-   InstallWindowEventHandler(mWindowRef,
-                             mWindowEventHandlerUPP,
-                             GetEventTypeCount(WindowEventList),
-                             WindowEventList,
-                             this,
-                             &mWindowEventHandlerRef);
-
-   // Find the content view within our window
-   HIViewRef view;
-   HIViewFindByID(HIViewGetRoot(mWindowRef), kHIViewWindowContentID, &view);
-
-   // And ask the effect to add it's GUI
-   mEffect->callDispatcher(effEditOpen, 0, 0, mWindowRef, 0.0);
-
-   // Get the subview it created
-   HIViewRef subview = HIViewGetFirstSubview(view);
-   if (subview == NULL) {
-      // Doesn't seem the effect created the subview, so switch
-      // to the plain dialog
-      mEffect->callDispatcher(effEditClose, 0, 0, mWindowRef, 0.0);
-      mGui = false;
-      RemoveHandler();
-      BuildPlain();
-      return;
-   }
-
-#elif defined(__WXMSW__)
-
-   wxWindow *w = new wxPanel(this, wxID_ANY);
-   mEffect->callDispatcher(effEditOpen, 0, 0, w->GetHWND(), 0.0);
-
-#else
-
-#endif
-
-   // Get the final bounds of the effect GUI
-   mEffect->callDispatcher(effEditGetRect, 0, 0, &rect, 0.0);
-
-   // Build our display now
-   wxBoxSizer *vs = new wxBoxSizer(wxVERTICAL);
-   wxBoxSizer *hs = new wxBoxSizer(wxHORIZONTAL);
-
-   // Add the program bar at the top
-   vs->Add(BuildProgramBar(), 0, wxCENTER | wxEXPAND);
-
-   // Reserve space for the effect GUI
-#if defined(__WXMAC__)
-
-   mContainer = hs->Add(rect->right - rect->left, rect->bottom - rect->top);
-
-#elif defined(__WXMSW__)
-
-   mContainer = hs->Add(w, 1, wxCENTER | wxEXPAND);
-   mContainer->SetMinSize(rect->right - rect->left, rect->bottom - rect->top);
-
-#else
-
-#endif
-
-   vs->Add(hs, 0, wxCENTER);
-
-   // Add the standard button bar at the bottom
-   vs->Add(CreateStdButtonSizer(this, ePreviewButton|eCancelButton|eOkButton), 0, wxEXPAND);
-   SetSizerAndFit(vs);
-
-   // Found out where the reserved space wound up
-   wxPoint pos = mContainer->GetPosition();
-
-#if defined(__WXMAC__)
-   // Reposition the subview into the reserved space
-   HIViewPlaceInSuperviewAt(subview, pos.x, pos.y);
-
-   // Some VST effects do not work unless the default handler is removed since
-   // it captures many of the events that the plugins need.  But, it must be
-   // done last since proper window sizing will not occur otherwise.
-   ::RemoveEventHandler((EventHandlerRef)MacGetEventHandler());
-
-#elif defined(__WXMSW__)
-#else
-#endif
-}
-
-void VSTEffectDialog::BuildPlain()
-{
-   mNames = new wxStaticText *[mAEffect->numParams];
-   mSliders = new wxSlider *[mAEffect->numParams];
-   mDisplays = new wxStaticText *[mAEffect->numParams];
-   mLabels = new wxStaticText *[mAEffect->numParams];
-
-   wxBoxSizer *vSizer = new wxBoxSizer(wxVERTICAL);
-   vSizer->Add(BuildProgramBar(), 0,  wxALIGN_CENTER | wxEXPAND);
-
-   wxScrolledWindow *sw = new wxScrolledWindow(this,
-                                               wxID_ANY,
-                                               wxDefaultPosition,
-                                               wxDefaultSize,
-                                               wxVSCROLL | wxTAB_TRAVERSAL);
-
-   // Try to give the window a sensible default/minimum size
-   wxSize sz = GetParent()->GetSize();
-   sw->SetMinSize(wxSize(wxMax(600, sz.GetWidth() * 2 / 3), sz.GetHeight() / 2));
-
-   sw->SetScrollRate(0, 20);
-   vSizer->Add(sw, 1, wxEXPAND | wxALL, 5);
-
-   // Preview, OK, & Cancel buttons
-   vSizer->Add(CreateStdButtonSizer(this, ePreviewButton|eCancelButton|eOkButton), 0, wxEXPAND);
-
-   SetSizer(vSizer);
-
-   wxSizer *paramSizer = new wxStaticBoxSizer(wxVERTICAL, sw, _("Effect Settings"));
-
-   wxFlexGridSizer *gridSizer = new wxFlexGridSizer(4, 0, 0);
-   gridSizer->AddGrowableCol(1);
-
-   // Find the longest parameter name.
-   int namew = 0;
-   int w;
-   int h;
-   for (int i = 0; i < mAEffect->numParams; i++) {
-      wxString text = mEffect->GetString(effGetParamName, i);
-      if (text.Right(1) != wxT(':')) {
-         text += wxT(':');
-      }
-      GetTextExtent(text, &w, &h);
-      if (w > namew) {
-         namew = w;
-      }
-   }
-
-   GetTextExtent(wxT("HHHHHHHH"), &w, &h);
-
-   for (int i = 0; i < mAEffect->numParams; i++) {
-      mNames[i] = new wxStaticText(sw,
-                                    wxID_ANY,
-                                    wxEmptyString,
-                                    wxDefaultPosition,
-                                    wxSize(namew, -1),
-                                    wxALIGN_RIGHT | wxST_NO_AUTORESIZE);
-      gridSizer->Add(mNames[i], 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxALL, 5);
-
-      mSliders[i] = new wxSlider(sw,
-                                 ID_VST_SLIDERS + i,
-                                 0,
-                                 0,
-                                 1000,
-                                 wxDefaultPosition,
-                                 wxSize(200, -1));
-      gridSizer->Add(mSliders[i], 0, wxALIGN_CENTER_VERTICAL | wxEXPAND | wxALL, 5);
-
-      mDisplays[i] = new wxStaticText(sw,
-                                      wxID_ANY,
-                                      wxEmptyString,
-                                      wxDefaultPosition,
-                                      wxSize(w, -1),
-                                      wxALIGN_RIGHT | wxST_NO_AUTORESIZE);
-      gridSizer->Add(mDisplays[i], 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxALL, 5);
-
-      mLabels[i] = new wxStaticText(sw,
-                                     wxID_ANY,
-                                     wxEmptyString,
-                                     wxDefaultPosition,
-                                     wxSize(w, -1),
-                                     wxALIGN_LEFT | wxST_NO_AUTORESIZE);
-      gridSizer->Add(mLabels[i], 0, wxALIGN_CENTER_VERTICAL | wxALIGN_LEFT | wxALL, 5);
-   }
-
-   paramSizer->Add(gridSizer, 1, wxEXPAND | wxALL, 5);
-   sw->SetSizer(paramSizer);
-
-   Layout();
-   Fit();
-   SetSizeHints(GetSize());
-   RefreshParameters();
-
-   mSliders[0]->SetFocus();
-}
-
-wxSizer *VSTEffectDialog::BuildProgramBar()
-{
-   wxArrayString progs;
-
-   // Some plugins, like Guitar Rig 5, only report 128 programs while they have hundreds.  While
-   // I was able to come up with a hack in the Guitar Rig case to gather all of the program names,
-   // it would not let me set a program outside of the first 128.
-   for (int i = 0; i < mAEffect->numPrograms; i++) {
-      progs.Add(mEffect->GetString(effGetProgramNameIndexed, i));
-   }
-
-   if (progs.GetCount() == 0) {
-      progs.Add(_("None"));
-   }
-
-   wxString val;
-   int progn = mEffect->callDispatcher(effGetProgram, 0, 0, NULL, 0.0);
-
-   // An unset program is perfectly valid, do not force a default.
-   if (progn >= 0) {
-      val = progs[progn];
-   }
-
-   wxBoxSizer *hs = new wxBoxSizer(wxHORIZONTAL);
-
-   wxStaticText *st = new wxStaticText(this, wxID_ANY, _("Presets:"));
-   hs->Add(st, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-
-   mProgram = new wxComboBox(this,
-                             ID_VST_PROGRAM,
-                             val,
-                             wxDefaultPosition,
-                             wxSize(200, -1),
-                             progs);
-   mProgram->SetName(_("Presets"));
-   hs->Add(mProgram, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-
-   wxButton *bt = new wxButton(this, ID_VST_LOAD, _("&Load"));
-   hs->Add(bt, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-
-   bt = new wxButton(this, ID_VST_SAVE, _("&Save"));
-   hs->Add(bt, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-
-   hs->AddStretchSpacer();
-
-   bt = new wxButton(this, ID_VST_SETTINGS, _("S&ettings..."));
-   hs->Add(bt, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_LEFT | wxALL, 5);
-
-   return hs;
-}
-
-void VSTEffectDialog::RefreshParameters(int skip)
-{
-   if (!mGui) {
-      for (int i = 0; i < mAEffect->numParams; i++) {
-         wxString text = mEffect->GetString(effGetParamName, i).Trim(true).Trim(false);
-         wxString name = text;
-
-         if (text.Right(1) != wxT(':')) {
-            text += wxT(':');
-         }
-         mNames[i]->SetLabel(text);
-
-         // For some parameters types like on/off, setting the slider value has
-         // a side effect that causes it to only move when the parameter changes
-         // from off to on.  However, this prevents changing the value using the
-         // keyboard, so we skip the active slider if any.
-         if (i != skip) {
-            mSliders[i]->SetValue(mEffect->callGetParameter(i) * 1000);
-         }
-         name = text;
-
-         text = mEffect->GetString(effGetParamDisplay, i);
-         if (text.IsEmpty()) {
-            text.Printf(wxT("%.5g"),mEffect->callGetParameter(i));
-         }
-         mDisplays[i]->SetLabel(wxString::Format(wxT("%8s"), text.c_str()));
-         name += wxT(' ') + text;
-
-         text = mEffect->GetString(effGetParamDisplay, i);
-         if (!text.IsEmpty()) {
-            text.Printf(wxT("%-8s"), mEffect->GetString(effGetParamLabel, i).c_str());
-            mLabels[i]->SetLabel(wxString::Format(wxT("%8s"), text.c_str()));
-            name += wxT(' ') + text;
-         }
-
-         mSliders[i]->SetName(name);
-      }
-   }
-}
-
-void VSTEffectDialog::OnUpdateDisplay(wxCommandEvent & evt)
-{
-   int i;
-
-   Freeze();
-
-   // Refresh the program list since some effects change the available programs based
-   // on the users activity.
-   mProgram->Clear();
-   for (i = 0; i < mAEffect->numPrograms; i++) {
-      mProgram->Append(mEffect->GetString(effGetProgramNameIndexed, i));
-   }
-
-   // The new list may not have the previously selected program or the user may have
-   // changed it
-   i = mEffect->callDispatcher(effGetProgram, 0, 0, NULL, 0.0);
-   if (i >= 0) {
-      mProgram->SetSelection(i);
-   }
-
-   Thaw();
-}
-
-void VSTEffectDialog::OnSizeWindow(wxCommandEvent & evt)
-{
-   if (!mContainer) {
-      return;
-   }
-
-   mContainer->SetMinSize(evt.GetInt(), (int) evt.GetExtraLong());
-   Fit();
-   Layout();
-}
-
-void VSTEffectDialog::OnSlider(wxCommandEvent & evt)
-{
-   wxSlider *s = (wxSlider *) evt.GetEventObject();
-   int i = s->GetId() - ID_VST_SLIDERS;
-
-   mEffect->callSetParameter(i, s->GetValue() / 1000.0);
-
-   RefreshParameters(i);
-}
-
-void VSTEffectDialog::OnProgram(wxCommandEvent & evt)
-{
-   mEffect->callDispatcher(effSetProgram, 0, evt.GetInt(), NULL, 0.0);
-   RefreshParameters();
-}
-
-void VSTEffectDialog::OnProgramText(wxCommandEvent & WXUNUSED(event))
-{
-   int i = mEffect->callDispatcher(effGetProgram, 0, 0, NULL, 0.0);
-
-   // Bail if nothing is selected
-   if (i < 0) {
-      return;
-   }
-
-   wxString name = mProgram->GetValue();
-   int ip = mProgram->GetInsertionPoint();
-
-   // Limit the length of the string, max 24 + 1 for null terminator
-   if (name.Length() > 24) {
-      name = name.Left(24);
-   }
-
-   mEffect->SetString(effSetProgramName, name, i);
-
-   // Some effects do not allow you to change the name and you can't always trust the
-   // return value, so just get ask for the name again.
-   name = mEffect->GetString(effGetProgramNameIndexed, i);
-
-   mProgram->SetString(i, name);
-
-   // On Windows, must reselect after doing a SetString()...at least that's
-   // what seems to be required.
-   mProgram->SetStringSelection(name);
-
-   // Which also means we have to reposition the caret.
-   if (ip >= 0) {
-      mProgram->SetInsertionPoint(ip);
-   }
-
-   RefreshParameters();
-}
-
-void VSTEffectDialog::OnLoad(wxCommandEvent & WXUNUSED(event))
-{
-   wxString fn;
-
-   // Ask the user for the real name
-   fn = FileSelector(_("Load VST Preset:"),
-                     FileNames::DataDir(),
-                     wxEmptyString,
-                     wxT("xml"),
-                     wxT("VST preset files (*.fxp; *.xml)|*.fxp;*.xml"),
-                     wxFD_OPEN | wxRESIZE_BORDER,
-                     this);
-
-   // User canceled...
-   if (fn.IsEmpty()) {
-      return;
-   }
-
-   size_t len = fn.Len();
-   if (len > 4 && wxStricmp(fn.Mid(len - 4), wxT(".fxp")) == 0) {
-      //
-      // FXP specification from VST SDK 2.4 (vstfxstore.h)
-      //
-      int i;
-      wxInt32 buffer[8];
-      char *buf = NULL;
-      bool error = false;
-
-      // read VST program file (FXP)
-      wxFFile fxpFile(fn, wxT("rb"));
-      if (!fxpFile.IsOpened()) {
-         wxMessageBox(wxString::Format(_("Could not open file: \"%s\""), fn.c_str()),
-                      _("Error Loading VST Presets"),
-                      wxOK | wxCENTRE,
-                      this);
-         return;
-      }
-      if (!error) error = !fread(buffer, 28, 1, fxpFile.fp());
-
-      // VST always uses Big Endian, convert first
-      for (i = 0; i < 7; i++)
-         buffer[i] = wxINT32_SWAP_ON_LE(buffer[i]);
-
-      if (!error) error = (buffer[0] != CCONST('C', 'c', 'n', 'K'));    ///< 'CcnK'
-      //VstInt32 byteSize;			                                    ///< size of this chunk, excl. magic + byteSize
-      if (!error) {
-         if (mAEffect->flags & effFlagsProgramChunks)
-            error = (buffer[2] != CCONST('F', 'P', 'C', 'h'));          ///< 'FxCk' (regular) or 'FPCh' (opaque chunk)
-         else
-            error = (buffer[2] != CCONST('F', 'x', 'C', 'k'));
-      }
-      if (!error) error = (buffer[3] != 1);                             ///< format version (currently 1)
-      if (!error) error = (buffer[4] != mAEffect->uniqueID);            ///< fx unique ID    (could try to load instead, as XML does)
-      //if (!error) error = (buffer[5] !=                               ///< fx version      (currently ignored)
-      //                     mEffect->callDispatcher(effGetVendorVersion, 0, 0, NULL, 0.0));
-      if (!error) error = (buffer[6] != mAEffect->numParams);           ///< number of parameters
-
-      buffer[7] = 0; // ensure trailing NUL
-      if (!error) error = !fread(buffer, 28, 1, fxpFile.fp());          ///< program name (null-terminated ASCII string)
-      if (!error) fn = wxConvLocal.cMB2WC((char*)buffer, 29, &len);
-
-      if (mAEffect->flags & effFlagsProgramChunks) {
-         if (!error) error = !fread(buffer, 4, 1, fxpFile.fp());
-         i = wxINT32_SWAP_ON_LE(buffer[0]);
-         if (!error) error = (i < 1);
-
-         if (!error) {
-            buf = new char[i];
-            error = !buf;
-         }
-         if (!error) error = !fread(buf, i, 1, fxpFile.fp());
-         if (!error) mEffect->callDispatcher(effSetChunk, 1, i, buf, 0.0);
-
-         delete [] buf;
-      }
-      else {
-         float val;
-
-         if (!error) {
-            buf = new char[mAEffect->numParams << 2];
-            error = !buf;
-         }
-         if (!error) error = !fread(buf, mAEffect->numParams << 2, 1, fxpFile.fp());
-
-         i = -1;
-         while (!error && (++i < mAEffect->numParams)) {
-            *((wxInt32*)&val) = wxINT32_SWAP_ON_LE(((wxInt32*)buf)[i]);
-            if (!error) error = (val < 0.0 || val > 1.0);
-            if (!error) mEffect->callSetParameter(i, val);
-         }
-
-         delete [] buf;
-      }
-
-      // set program name
-      if (!error && !fn.IsEmpty()) {
-         i = mProgram->GetCurrentSelection();
-         if (i < 0) i = 0;   // default to first program
-         mProgram->SetString(i, fn);
-         mProgram->SetValue(fn);
-         mEffect->SetString(effSetProgramName, fn, i);
-      }
-
-      if (error) {
-         wxMessageBox(_("Could not load file or incompatible content."),
-                      _("Error Loading VST Presets"),
-                      wxOK | wxCENTRE,
-                      this);
-      }
-      fxpFile.Close();
-   }
-   else {
-      // default to read as XML file
-      // Load the program
-      XMLFileReader reader;
-      if (!reader.Parse(this, fn)) {
-         // Inform user of load failure
-         wxMessageBox(reader.GetErrorStr(),
-                      _("Error Loading VST Presets"),
-                      wxOK | wxCENTRE,
-                      this);
-      }
-   }
-
-   RefreshParameters();
-
-   return;
-}
-
-void VSTEffectDialog::OnSave(wxCommandEvent & WXUNUSED(event))
-{
-   int i = mProgram->GetCurrentSelection();
-   wxString fn;
-
-   // Ask the user for the real name
-   FileDialog fd(this,
-                 _("Save VST Preset As:"),
-                 FileNames::DataDir(),
-                 mProgram->GetValue(),
-                 wxT("Standard VST preset file (*.fxp)|*.fxp|Audacity VST preset file (*.xml)|*.xml"),
-                 wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxRESIZE_BORDER);
-
-   // User canceled...
-   if (fd.ShowModal() == wxID_CANCEL) {
-      return;
-   }
-
-   fn = fd.GetPath();
-   if (fd.GetFilterIndex() == 0) {
-      //
-      // FXP specification from VST SDK 2.4 (vstfxstore.h)
-      //
-      int i;
-      wxInt32 buffer[8], chunkSize;
-      char *buf = NULL;
-      bool error = false;
-
-      // Create/Open the file
-      wxFFile fxpFile(fn, wxT("wb"));
-      if (!fxpFile.IsOpened()) {
-         wxMessageBox(wxString::Format(_("Could not open file: \"%s\""), fn.c_str()),
-                      _("Error Saving VST Presets"),
-                      wxOK | wxCENTRE,
-                      this);
-         return;
-      }
-
-      buffer[0] = CCONST('C', 'c', 'n', 'K'); // VstInt32 chunkMagic;   ///< 'CcnK'
-      buffer[1] = 48; // VstInt32 byteSize;			                    ///< size of this chunk, excl. magic + byteSize
-      if (mAEffect->flags & effFlagsProgramChunks) {                    ///< 'FxCk' (regular) or 'FPCh' (opaque chunk)
-         buffer[2] = CCONST('F', 'P', 'C', 'h');
-         chunkSize = mEffect->callDispatcher(effGetChunk, 1, 0, &buf, 0.0);
-         buffer[1] += 4;
-         buffer[1] += chunkSize;
-      }
-      else {
-         buffer[2] = CCONST('F', 'x', 'C', 'k');
-         buffer[1] += (mAEffect->numParams << 2);
-      }
-      buffer[3] = 1;                                                    ///< format version (currently 1)
-      buffer[4] = mAEffect->uniqueID;                                   ///< fx unique ID
-      buffer[5] = mEffect->callDispatcher(effGetVendorVersion, 0, 0, NULL, 0.0);      ///< fx version
-      buffer[6] = mAEffect->numParams;
-
-      // VST always uses Big Endian, convert first
-      for (i = 0; i < 7; i++)
-         buffer[i] = wxINT32_SWAP_ON_LE(buffer[i]);
-
-      if (!error) error = !fwrite(buffer, 28, 1, fxpFile.fp());
-      memset(buffer, 0, 28);
-      wxConvLocal.FromWChar((char*)buffer, 27, mProgram->GetValue());
-      if (!error) error = (fwrite(buffer, 1, 28, fxpFile.fp()) < 28);   ///< program name (null-terminated ASCII string)
-
-      if (mAEffect->flags & effFlagsProgramChunks) {
-         buffer[0] = wxINT32_SWAP_ON_LE(chunkSize);
-         if (!error) error = !fwrite(buffer, 4, 1, fxpFile.fp());
-         if (!error) error = !fwrite(buf, chunkSize, 1, fxpFile.fp());
-      }
-      else {
-         float val;
-         if (!error) {
-            buf = new char[mAEffect->numParams << 2];
-            error = !buf;
-         }
-         for (i = 0; i < mAEffect->numParams; i++) {
-            val = mEffect->callGetParameter(i);
-            ((wxInt32*)buf)[i] = wxINT32_SWAP_ON_LE(*((wxInt32*)&val));
-         }
-         if (!error) error = !fwrite(buf, (mAEffect->numParams << 2), 1, fxpFile.fp());
-         delete [] buf;
-      }
-
-      fxpFile.Close();
-   }
-   else {
-      XMLFileWriter xmlFile;
-
-      // Create/Open the file
-      xmlFile.Open(fn, wxT("wb"));
-
-      xmlFile.StartTag(wxT("vstprogrampersistence"));
-      xmlFile.WriteAttr(wxT("version"), wxT("1"));
-
-      i = mEffect->callDispatcher(effGetVendorVersion, 0, 0, NULL, 0.0);
-      xmlFile.StartTag(wxT("effect"));
-      xmlFile.WriteAttr(wxT("name"), mEffect->GetEffectIdentifier());
-      xmlFile.WriteAttr(wxT("version"), i);
-
-      xmlFile.StartTag(wxT("program"));
-      xmlFile.WriteAttr(wxT("name"), mProgram->GetValue());
-
-      int clen = 0;
-      if (mAEffect->flags & effFlagsProgramChunks) {
-         void *chunk = NULL;
-
-         clen = (int) mEffect->callDispatcher(effGetChunk, 1, 0, &chunk, 0.0);
-         if (clen != 0) {
-            xmlFile.StartTag(wxT("chunk"));
-            xmlFile.WriteSubTree(b64encode(chunk, clen) + wxT('\n'));
-            xmlFile.EndTag(wxT("chunk"));
-         }
-      }
-
-      if (clen == 0) {
-         for (i = 0; i < mAEffect->numParams; i++) {
-            xmlFile.StartTag(wxT("param"));
-
-            xmlFile.WriteAttr(wxT("index"), i);
-            xmlFile.WriteAttr(wxT("name"),
-                              mEffect->GetString(effGetParamName, i));
-            xmlFile.WriteAttr(wxT("value"),
-                              wxString::Format(wxT("%f"),
-                              mEffect->callGetParameter(i)));
-
-            xmlFile.EndTag(wxT("param"));
-         }
-      }
-
-      xmlFile.EndTag(wxT("program"));
-
-      xmlFile.EndTag(wxT("effect"));
-
-      xmlFile.EndTag(wxT("vstprogrampersistence"));
-
-      // Close the file
-      xmlFile.Close();
-
-   }
-}
-
-void VSTEffectDialog::OnSettings(wxCommandEvent & WXUNUSED(event))
-{
-   VSTEffectSettingsDialog dlg(this);
-   dlg.ShowModal();
-}
-
-void VSTEffectDialog::OnClose(wxCloseEvent & WXUNUSED(event))
-{
-   EndModal(false);
-}
-
-void VSTEffectDialog::OnPreview(wxCommandEvent & WXUNUSED(event))
-{
-   mEffect->Preview();
-}
-
-void VSTEffectDialog::OnOk(wxCommandEvent & WXUNUSED(event))
-{
-// In wxGTK, Show(false) calls EndModal, which produces an assertion in debug builds
-#if !defined(__WXGTK__)
-   // Hide the dialog before closing the effect to prevent a brief empty dialog
-   Show(false);
-#endif
-
-   if (mGui) {
-      mEffect->callDispatcher(effEditClose, 0, 0, NULL, 0.0);
-   }
-
-   EndModal(true);
-}
-
-void VSTEffectDialog::OnCancel(wxCommandEvent & WXUNUSED(event))
-{
-// In wxGTK, Show(false) calls EndModal, which produces an assertion in debug builds
-#if !defined(__WXGTK__)
-   // Hide the dialog before closing the effect to prevent a brief empty dialog
-   Show(false);
-#endif
-
-   if (mGui) {
-      mEffect->callDispatcher(effEditClose, 0, 0, NULL, 0.0);
-   }
-
-   EndModal(false);
-}
-
-bool VSTEffectDialog::HandleXMLTag(const wxChar *tag, const wxChar **attrs)
-{
-   if (wxStrcmp(tag, wxT("vstprogrampersistence")) == 0) {
-      while (*attrs) {
-         const wxChar *attr = *attrs++;
-         const wxChar *value = *attrs++;
-
-         if (!value) {
-            break;
-         }
-
-         const wxString strValue = value;
-
-         if (wxStrcmp(attr, wxT("version")) == 0) {
-            if (!XMLValueChecker::IsGoodInt(strValue)) {
-               return false;
-            }
-            // Nothing to do with it for now
-         }
-         else {
-            return false;
-         }
-      }
-
-      return true;
-   }
-
-   if (wxStrcmp(tag, wxT("effect")) == 0) {
-      while (*attrs) {
-         const wxChar *attr = *attrs++;
-         const wxChar *value = *attrs++;
-
-         if (!value) {
-            break;
-         }
-
-         const wxString strValue = value;
-
-         if (wxStrcmp(attr, wxT("name")) == 0) {
-            if (!XMLValueChecker::IsGoodString(strValue)) {
-               return false;
-            }
-
-            if (value != mEffect->GetEffectIdentifier()) {
-               wxString msg;
-               msg.Printf(_("This parameter file was saved from %s.  Continue?"), value);
-               int result = wxMessageBox(msg, wxT("Confirm"), wxYES_NO, this);
-               if (result == wxNO) {
-                  return false;
-               }
-            }
-         }
-         else if (wxStrcmp(attr, wxT("version")) == 0) {
-            if (!XMLValueChecker::IsGoodInt(strValue)) {
-               return false;
-            }
-            // Nothing to do with it for now
-         }
-         else {
-            return false;
-         }
-      }
-
-      return true;
-   }
-
-   if (wxStrcmp(tag, wxT("program")) == 0) {
-      while (*attrs) {
-         const wxChar *attr = *attrs++;
-         const wxChar *value = *attrs++;
-
-         if (!value) {
-            break;
-         }
-
-         const wxString strValue = value;
-
-         if (wxStrcmp(attr, wxT("name")) == 0) {
-            if (!XMLValueChecker::IsGoodString(strValue)) {
-               return false;
-            }
-
-            if (strValue.Length() > 24) {
-               return false;
-            }
-
-            int ndx = mProgram->GetCurrentSelection();
-            if (ndx == wxNOT_FOUND)
-            {
-               ndx = 0;
-            }
-
-            mProgram->SetString(ndx, strValue);
-            mProgram->SetValue(strValue);
-
-            mEffect->SetString(effSetProgramName, strValue, ndx);
-         }
-         else {
-            return false;
-         }
-      }
-
-      mInChunk = false;
-
-      return true;
-   }
-
-   if (wxStrcmp(tag, wxT("param")) == 0) {
-      long ndx = -1;
-      double val = -1.0;
-      while (*attrs) {
-         const wxChar *attr = *attrs++;
-         const wxChar *value = *attrs++;
-
-         if (!value) {
-            break;
-         }
-
-         const wxString strValue = value;
-
-         if (wxStrcmp(attr, wxT("index")) == 0) {
-            if (!XMLValueChecker::IsGoodInt(strValue) || !strValue.ToLong(&ndx)) {
-               return false;
-            }
-
-            if (ndx < 0 || ndx >= mAEffect->numParams) {
-               // Could be a different version of the effect...probably should
-               // tell the user
-               return false;
-            }
-         }
-         else if (wxStrcmp(attr, wxT("name")) == 0) {
-            if (!XMLValueChecker::IsGoodString(strValue)) {
-               return false;
-            }
-            // Nothing to do with it for now
-         }
-         else if (wxStrcmp(attr, wxT("value")) == 0) {
-            if (!XMLValueChecker::IsGoodInt(strValue) ||
-               !Internat::CompatibleToDouble(strValue, &val)) {
-               return false;
-            }
-
-            if (val < 0.0 || val > 1.0) {
-               return false;
-            }
-         }
-      }
-
-      if (ndx == -1 || val == -1.0) {
-         return false;
-      }
-
-      mEffect->callSetParameter(ndx, val);
-
-      return true;
-   }
-
-   if (wxStrcmp(tag, wxT("chunk")) == 0) {
-      mInChunk = true;
-      return true;
-   }
-
-   return false;
-}
-
-void VSTEffectDialog::HandleXMLEndTag(const wxChar *tag)
-{
-   if (wxStrcmp(tag, wxT("chunk")) == 0) {
-      if (mChunk.Length()) {
-         char *buf = new char[mChunk.Length() / 4 * 3];
-
-         int len = b64decode(mChunk, buf);
-         if (len) {
-            mEffect->callDispatcher(effSetChunk, 1, len, buf, 0.0);
-         }
-
-         delete [] buf;
-         mChunk.Clear();
-      }
-      mInChunk = false;
-   }
-}
-
-void VSTEffectDialog::HandleXMLContent(const wxString & content)
-{
-   if (mInChunk) {
-      mChunk += wxString(content).Trim(true).Trim(false);
-   }
-}
-
-XMLTagHandler *VSTEffectDialog::HandleXMLChild(const wxChar *tag)
-{
-   if (wxStrcmp(tag, wxT("vstprogrampersistence")) == 0) {
-      return this;
-   }
-
-   if (wxStrcmp(tag, wxT("effect")) == 0) {
-      return this;
-   }
-
-   if (wxStrcmp(tag, wxT("program")) == 0) {
-      return this;
-   }
-
-   if (wxStrcmp(tag, wxT("param")) == 0) {
-      return this;
-   }
-
-   if (wxStrcmp(tag, wxT("chunk")) == 0) {
-      return this;
-   }
-
-   return NULL;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Base64 en/decoding
-//
-// Original routines marked as public domain and found at:
-//
-// http://en.wikibooks.org/wiki/Algorithm_implementation/Miscellaneous/Base64
-//
-////////////////////////////////////////////////////////////////////////////////
-
-// Lookup table for encoding
-const static wxChar cset[] = wxT("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
-const static char padc = wxT('=');
-
-wxString VSTEffectDialog::b64encode(const void *in, int len)
-{
-   unsigned char *p = (unsigned char *) in;
-   wxString out;
-
-   unsigned long temp;
-   for (int i = 0; i < len / 3; i++) {
-      temp  = (*p++) << 16; //Convert to big endian
-      temp += (*p++) << 8;
-      temp += (*p++);
-      out += cset[(temp & 0x00FC0000) >> 18];
-      out += cset[(temp & 0x0003F000) >> 12];
-      out += cset[(temp & 0x00000FC0) >> 6];
-      out += cset[(temp & 0x0000003F)];
-   }
-
-   switch (len % 3)
-   {
-      case 1:
-         temp  = (*p++) << 16; //Convert to big endian
-         out += cset[(temp & 0x00FC0000) >> 18];
-         out += cset[(temp & 0x0003F000) >> 12];
-         out += padc;
-         out += padc;
-         break;
-
-      case 2:
-         temp  = (*p++) << 16; //Convert to big endian
-         temp += (*p++) << 8;
-         out += cset[(temp & 0x00FC0000) >> 18];
-         out += cset[(temp & 0x0003F000) >> 12];
-         out += cset[(temp & 0x00000FC0) >> 6];
-         out += padc;
-         break;
-   }
-
-   return out;
-}
-
-int VSTEffectDialog::b64decode(wxString in, void *out)
-{
-   int len = in.Length();
-   unsigned char *p = (unsigned char *) out;
-
-   if (len % 4) { //Sanity check
-      return 0;
-   }
-
-   int padding = 0;
-   if (len) {
-      if (in[len - 1] == padc) {
-         padding++;
-      }
-
-      if (in[len - 2] == padc) {
-         padding++;
-      }
-   }
-
-   //const char *a = in.mb_str();
-   //Setup a vector to hold the result
-   unsigned long temp = 0; //Holds decoded quanta
-   int i = 0;
-   while (i < len) {
-      for (int quantumPosition = 0; quantumPosition < 4; quantumPosition++) {
-         unsigned char c = in[i];
-         temp <<= 6;
-
-         if (c >= 0x41 && c <= 0x5A) {
-            temp |= c - 0x41;
-         }
-         else if (c >= 0x61 && c <= 0x7A) {
-            temp |= c - 0x47;
-         }
-         else if (c >= 0x30 && c <= 0x39) {
-            temp |= c + 0x04;
-         }
-         else if (c == 0x2B) {
-            temp |= 0x3E;
-         }
-         else if (c == 0x2F) {
-            temp |= 0x3F;
-         }
-         else if (c == padc) {
-            switch (len - i)
-            {
-               case 1: //One pad character
-                  *p++ = (temp >> 16) & 0x000000FF;
-                  *p++ = (temp >> 8) & 0x000000FF;
-                  return p - (unsigned char *) out;
-               case 2: //Two pad characters
-                  *p++ = (temp >> 10) & 0x000000FF;
-                  return p - (unsigned char *) out;
-            }
-         }
-         i++;
-      }
-      *p++ = (temp >> 16) & 0x000000FF;
-      *p++ = (temp >> 8) & 0x000000FF;
-      *p++ = temp & 0x000000FF;
-   }
-
-   return p - (unsigned char *) out;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// VSTEffect
-//
-///////////////////////////////////////////////////////////////////////////////
+// Needed to support shell plugins...sucks, but whatcha gonna do???
+intptr_t VSTEffect::mCurrentEffectID;
 
 typedef AEffect *(*vstPluginMain)(audioMasterCallback audioMaster);
 
-static intptr_t audioMaster(AEffect * effect,
-                            int32_t opcode,
-                            int32_t index,
-                            intptr_t value,
-                            void * ptr,
-                            float opt)
+intptr_t VSTEffect::AudioMaster(AEffect * effect,
+                                int32_t opcode,
+                                int32_t index,
+                                intptr_t value,
+                                void * ptr,
+                                float opt)
 {
-   VSTEffect *vst = (effect ? (VSTEffect *) effect->user : NULL);
+   VSTEffect *vst = (effect ? (VSTEffect *) effect->ptr2 : NULL);
 
    // Handles operations during initialization...before VSTEffect has had a
    // chance to set its instance pointer.
@@ -2475,7 +1378,7 @@ static intptr_t audioMaster(AEffect * effect,
          return (intptr_t) 2400;
 
       case audioMasterCurrentId:
-         return (intptr_t) audacityVSTID;
+         return mCurrentEffectID;
 
       case audioMasterGetVendorString:
          strcpy((char *) ptr, "Audacity Team");    // Do not translate, max 64 + 1 for null terminator
@@ -2491,19 +1394,14 @@ static intptr_t audioMaster(AEffect * effect,
                             AUDACITY_REVISION << 8 |
                             AUDACITY_MODLEVEL);
 
-      // Let the effect know if a pin (channel in our case) is connected
-      case audioMasterPinConnected:
-         if (vst) {
-            return (intptr_t) (index < vst->GetChannels() ? 0 : 1);
-         }
-         return 0;
-
       // Some (older) effects depend on an effIdle call when requested.  An
       // example is the Antress Modern plugins which uses the call to update
       // the editors display when the program (preset) changes.
       case audioMasterNeedIdle:
-         if (vst) {
-            return vst->NeedIdle();
+         if (vst)
+         {
+            vst->NeedIdle();
+            return 1;
          }
          return 0;
 
@@ -2512,7 +1410,8 @@ static intptr_t audioMaster(AEffect * effect,
       // Since we don't do anything with the parameters while the editor is displayed,
       // there's no need for us to do anything.
       case audioMasterUpdateDisplay:
-         if (vst) {
+         if (vst)
+         {
             vst->UpdateDisplay();
             return 1;
          }
@@ -2520,21 +1419,24 @@ static intptr_t audioMaster(AEffect * effect,
 
       // Return the current time info.
       case audioMasterGetTime:
-         if (vst) {
+         if (vst)
+         {
             return (intptr_t) vst->GetTimeInfo();
          }
          return 0;
 
       // Inputs, outputs, or initial delay has changed...all we care about is initial delay.
       case audioMasterIOChanged:
-         if (vst) {
+         if (vst)
+         {
             vst->SetBufferDelay(effect->initialDelay);
             return 1;
          }
          return 0;
 
       case audioMasterGetSampleRate:
-         if (vst) {
+         if (vst)
+         {
             return (intptr_t) vst->GetSampleRate();
          }
          return 0;
@@ -2544,7 +1446,8 @@ static intptr_t audioMaster(AEffect * effect,
          return 1;
 
       case audioMasterGetCurrentProcessLevel:
-         if (vst) {
+         if (vst)
+         {
             return vst->GetProcessLevel();
          }
          return 0;
@@ -2558,27 +1461,25 @@ static intptr_t audioMaster(AEffect * effect,
 
       // Resize the window to accommodate the effect size
       case audioMasterSizeWindow:
-         if (vst) {
+         if (vst)
+         {
             vst->SizeWindow(index, value);
          }
          return 1;
 
       case audioMasterCanDo:
       {
-#if defined(__WXDEBUG__)
-#if defined(__WXMSW__)
-         wxLogDebug(wxT("VST canDo: %s"), wxString::FromAscii((char *)ptr).c_str());
-#else
-         wxPrintf(wxT("VST canDo: %s\n"), wxString::FromAscii((char *)ptr).c_str());
-#endif
-#endif
          char *s = (char *) ptr;
          if (strcmp(s, "acceptIOChanges") == 0 ||
-            strcmp(s, "sizeWindow") == 0) {
+            strcmp(s, "sendVstTimeInfo") == 0 ||
+            strcmp(s, "startStopProcess") == 0 ||
+            strcmp(s, "shellCategory") == 0 ||
+            strcmp(s, "sizeWindow") == 0)
+         {
             return 1;
          }
 
-#if defined(__WXDEBUG__)
+#if defined(VST_DEBUG)
 #if defined(__WXMSW__)
          wxLogDebug(wxT("VST canDo: %s"), wxString::FromAscii((char *)ptr).c_str());
 #else
@@ -2589,11 +1490,27 @@ static intptr_t audioMaster(AEffect * effect,
          return 0;
       }
 
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+      case audioMasterBeginEdit:
+      case audioMasterEndEdit:
+         return 0;
+
+      case audioMasterAutomate:
+         if (vst)
+         {
+            vst->Automate(index, opt);
+         }
+         return 0;
+
+#else
       // These are not needed since we don't need the parameter values until after the editor
       // has already been closed.  If we did realtime effects, then we'd need these.
       case audioMasterBeginEdit:
       case audioMasterEndEdit:
       case audioMasterAutomate:
+#endif
+      // We're always connected (sort of)
+      case audioMasterPinConnected:
 
       // We don't do MIDI yet
       case audioMasterWantMidi:
@@ -2603,59 +1520,48 @@ static intptr_t audioMaster(AEffect * effect,
          return 0;
    }
 
-#if defined(__WXDEBUG__)
+#if defined(VST_DEBUG)
 #if defined(__WXMSW__)
-   wxLogDebug(wxT("vst: %p opcode: %d index: %d value: %d ptr: %p opt: %f user: %p"),
-              effect, opcode, index, value, ptr, opt, vst);
+   wxLogDebug(wxT("vst: %p opcode: %d index: %d value: %p ptr: %p opt: %f user: %p"),
+              effect, (int) opcode, (int) index, (void *) value, ptr, opt, vst);
 #else
-   wxPrintf(wxT("vst: %p opcode: %d index: %d value: %d ptr: %p opt: %f user: %p\n"),
-            effect, opcode, index, value, ptr, opt, vst);
+   wxPrintf(wxT("vst: %p opcode: %d index: %d value: %p ptr: %p opt: %f user: %p\n"),
+            effect, (int) opcode, (int) index, (void *) value, ptr, opt, vst);
 #endif
 #endif
 
    return 0;
 }
 
-class VSTEffectTimer : public wxTimer
+VSTEffect::VSTEffect(const wxString & path, VSTEffect *master)
+:  mPath(path),
+   mMaster(master)
 {
-public:
-   VSTEffectTimer(VSTEffect *effect)
-   :  wxTimer(),
-      mEffect(effect)
-   {
-   }
-
-   ~VSTEffectTimer()
-   {
-   }
-
-   void Notify()
-   {
-      // Call the effect
-      if (!mEffect->callDispatcher(effIdle, 0, 0, NULL, 0.0)) {
-         // No more idle calls
-         Stop();
-      }
-   }
-
-private:
-   VSTEffect *mEffect;
-};
-
-VSTEffect::VSTEffect(const wxString & path)
-:  mPath(path)
-{
+   mHost = NULL;
    mModule = NULL;
    mAEffect = NULL;
-   mInBuffer = NULL;
-   mOutBuffer = NULL;
-   mDlg = NULL;
-   mTimer = NULL;
-   mInputs = 0;
-   mOutputs = 0;
-   mChannels = 0;
+   mDialog = NULL;
+   mEventHelper = NULL;
+
+   mTimer = new VSTEffectTimer(this);
+   mTimerGuard = 0;
+
+   mInteractive = false;
+   mAudioIns = 0;
+   mAudioOuts = 0;
+   mMidiIns = 0;
+   mMidiOuts = 0;
+   mSampleRate = 44100;
    mBlockSize = 0;
+   mBufferDelay = 0;
    mProcessLevel = 1;         // in GUI thread
+   mHasPower = false;
+   mWantsIdle = false;
+   mWantsEditIdle = false;
+   mUserBlockSize = 8192;
+   mBlockSize = mUserBlockSize;
+   mUseLatency = true;
+   mReady = false;
 
    memset(&mTimeInfo, 0, sizeof(mTimeInfo));
    mTimeInfo.samplePos = 0.0;
@@ -2666,114 +1572,481 @@ VSTEffect::VSTEffect(const wxString & path)
    mTimeInfo.timeSigDenominator = 4;
    mTimeInfo.flags = kVstTempoValid | kVstNanosValid;
 
-   PluginManager & pm = PluginManager::Get();
+   // UI
 
-   if (pm.IsRegistered(VSTPLUGINTYPE, mPath)) {
-      mName = pm.Read(wxT("Name"), wxEmptyString);
-      mVendor = pm.Read(wxT("Vendor"), wxEmptyString);
-      mInputs = pm.Read(wxT("Inputs"), 0L);
-      mOutputs = pm.Read(wxT("Outputs"), 0L);
-   }
-   else if (Load()) {
-      pm.RegisterPlugin(VSTPLUGINTYPE, mPath);
-      pm.Write(wxT("Name"), mName);
-      pm.Write(wxT("Vendor"), mVendor);
-      pm.Write(wxT("Inputs"), mInputs);
-      pm.Write(wxT("Outputs"), mOutputs);
-   }
+   mNames = NULL;
+   mSliders = NULL;
+   mDisplays = NULL;
+   mLabels = NULL;
+   mContainer = NULL;
 
-   if (mVendor.IsEmpty()) {
-      mVendor = VSTPLUGINTYPE;
-   }
+#if defined(__WXMAC__)
+   mOverlayRef = 0;
+   mOverlayEventHandlerUPP = 0;
+   mOverlayEventHandlerRef = 0;
 
-   if (mName.IsEmpty()) {
-      wxFileName fn(mPath);
-      mName = fn.GetName();
-   }
+   mWindowRef = 0;
+   mWindowEventHandlerUPP = 0;
+   mWindowEventHandlerRef = 0;
 
-   int flags = PLUGIN_EFFECT;
-   if (mInputs == 0) {
-      flags |= INSERT_EFFECT;
-   }
-   else if (mOutputs == 0) {
-      flags |= ANALYZE_EFFECT;
-   }
-   else {
-      flags |= PROCESS_EFFECT;
-   }
+   mRootTrackingHandlerRef = 0;
+   mViewTrackingHandlerRef = 0;
+   mSubviewTrackingHandlerRef = 0;
+   mOverlayRootTrackingHandlerRef = 0;
+   mOverlayViewTrackingHandlerRef = 0;
 
-   SetEffectFlags(flags);
+#elif defined(__WXMSW__)
+   mHwnd = 0;
+#else
+   mXdisp = 0;
+   mXwin = 0;
+#endif
+
+   // If we're a slave then go ahead a load immediately
+   if (mMaster)
+   {
+      Load();
+   }
 }
 
 VSTEffect::~VSTEffect()
 {
+   if (mDialog)
+   {
+      mDialog->Close();
+   }
+
+   if (mNames)
+   {
+      delete [] mNames;
+   }
+
+   if (mSliders)
+   {
+      delete [] mSliders;
+   }
+
+   if (mDisplays)
+   {
+      delete [] mDisplays;
+   }
+
+   if (mLabels)
+   {
+      delete [] mLabels;
+   }
+
    Unload();
 }
 
-wxString VSTEffect::GetEffectName()
-{
-   if (mVendor.IsEmpty()) {
-      return mName + wxT("...");
-   }
+// ============================================================================
+// IdentInterface Implementation
+// ============================================================================
 
-   return mVendor + wxT(": ") + mName + wxT("...");
+wxString VSTEffect::GetPath()
+{
+   return mPath;
 }
 
-wxString VSTEffect::GetEffectIdentifier()
+wxString VSTEffect::GetSymbol()
 {
    return mName;
 }
 
-std::set<wxString> VSTEffect::GetEffectCategories()
+wxString VSTEffect::GetName()
 {
-   return std::set<wxString>();
+   return GetSymbol();
 }
 
-wxString VSTEffect::GetEffectAction()
+wxString VSTEffect::GetVendor()
 {
-   return _("Performing Effect: ") + mName;
+   return mVendor;
 }
 
-bool VSTEffect::Init()
+wxString VSTEffect::GetVersion()
 {
-   if (!mAEffect) {
+   wxString version;
+
+   bool skipping = true;
+   for (int i = 0, s = 0; i < 4; i++, s += 8)
+   {
+      int dig = (mVersion >> s) & 0xff;
+      if (dig != 0 || !skipping)
+      {
+         version += !skipping ? wxT(".") : wxT("");
+         version += wxString::Format(wxT("%d"), dig);
+         skipping = false;
+      }
+   }
+
+   return version;
+}
+
+wxString VSTEffect::GetDescription()
+{
+   // VST does have a product string opcode and sum effects return a short
+   // description, but most do not or they just return the name again.  So,
+   // try to provide some sort of useful information.
+   mDescription = _("Audio In: ") +
+                  wxString::Format(wxT("%d"), mAudioIns) +
+                  _(", Audio Out: ") +
+                  wxString::Format(wxT("%d"), mAudioOuts);
+
+   return mDescription;
+}
+
+// ============================================================================
+// EffectIdentInterface Implementation
+// ============================================================================
+
+EffectType VSTEffect::GetType()
+{
+   if (mAudioIns == 0 && mAudioOuts == 0 && mMidiIns == 0 && mMidiOuts == 0)
+   {
+      return EffectTypeNone;
+   }
+
+   if (mAudioIns == 0 && mMidiIns == 0)
+   {
+      return EffectTypeGenerate;
+   }
+
+   if (mAudioOuts == 0 && mMidiOuts == 0)
+   {
+      return EffectTypeAnalyze;
+   }
+
+   return EffectTypeProcess;
+}
+
+
+wxString VSTEffect::GetFamily()
+{
+   return VSTPLUGINTYPE;
+}
+
+bool VSTEffect::IsInteractive()
+{
+   return mInteractive;
+}
+
+bool VSTEffect::IsDefault()
+{
+   return false;
+}
+
+bool VSTEffect::IsLegacy()
+{
+   return false;
+}
+
+bool VSTEffect::SupportsRealtime()
+{
+   return GetType() == EffectTypeProcess;
+}
+
+bool VSTEffect::SupportsAutomation()
+{
+   return mAutomatable;
+}
+
+// ============================================================================
+// EffectClientInterface Implementation
+// ============================================================================
+
+bool VSTEffect::SetHost(EffectHostInterface *host)
+{
+   mHost = host;
+
+   if (!mAEffect)
+   {
       Load();
    }
 
-   if (!mAEffect) {
+   if (!mAEffect)
+   {
       return false;
    }
 
-   mBlockSize = 0;
+   // If we have a master then there's no need to load settings since the master will feed
+   // us everything we need.
+   if (mMaster)
+   {
+      return true;
+   }
 
-   TrackListIterator iter(mOutputTracks);
-   WaveTrack *left = (WaveTrack *) iter.First();
-   while (left) {
-      sampleCount lstart;
-      sampleCount llen;
+   if (mHost)
+   {
+      mHost->GetSharedConfig(wxT("Options"), wxT("BufferSize"), mUserBlockSize, 8192);
+      mHost->GetSharedConfig(wxT("Options"), wxT("UseLatency"), mUseLatency, true);
 
-      GetSamples(left, &lstart, &llen);
+      mBlockSize = mUserBlockSize;
 
-      if (left->GetLinked()) {
-         WaveTrack *right = (WaveTrack *) iter.Next();
-         sampleCount rstart;
-         sampleCount rlen;
-
-         GetSamples(right, &rstart, &rlen);
-
-         if (left->GetRate() != right->GetRate()) {
-            wxMessageBox(_("Both channels of a stereo track must be the same sample rate."));
-            return false;
-         }
-
-         if (llen != rlen) {
-            wxMessageBox(_("Both channels of a stereo track must be the same length."));
-            return false;
-         }
+      bool haveDefaults;
+      mHost->GetPrivateConfig(mHost->GetFactoryDefaultsGroup(), wxT("Initialized"), haveDefaults, false);
+      if (!haveDefaults)
+      {
+         SaveParameters(mHost->GetFactoryDefaultsGroup());
+         mHost->SetPrivateConfig(mHost->GetFactoryDefaultsGroup(), wxT("Initialized"), true);
       }
 
-      left = (WaveTrack *) iter.Next();
+      LoadParameters(mHost->GetCurrentSettingsGroup());
    }
+
+   return true;
+}
+
+int VSTEffect::GetAudioInCount()
+{
+   return mAudioIns;
+}
+
+int VSTEffect::GetAudioOutCount()
+{
+   return mAudioOuts;
+}
+
+int VSTEffect::GetMidiInCount()
+{
+   return mMidiIns;
+}
+
+int VSTEffect::GetMidiOutCount()
+{
+   return mMidiOuts;
+}
+
+sampleCount VSTEffect::GetBlockSize(sampleCount maxBlockSize)
+{
+   if (mUserBlockSize > maxBlockSize)
+   {
+      mBlockSize = maxBlockSize;
+   }
+   else
+   {
+      mBlockSize = mUserBlockSize;
+   }
+
+   return mBlockSize;
+}
+
+void VSTEffect::SetSampleRate(sampleCount rate)
+{
+   mSampleRate = (float) rate;
+}
+
+sampleCount VSTEffect::GetLatency()
+{
+   if (mUseLatency)
+   {
+      // ??? Threading issue ???
+      sampleCount delay = mBufferDelay;
+      mBufferDelay = 0;
+      return delay;
+   }
+
+   return 0;
+}
+
+sampleCount VSTEffect::GetTailSize()
+{
+   return 0;
+}
+
+bool VSTEffect::IsReady()
+{
+   return mReady;
+}
+
+bool VSTEffect::ProcessInitialize()
+{
+   // Initialize time info
+   memset(&mTimeInfo, 0, sizeof(mTimeInfo));
+   mTimeInfo.sampleRate = mSampleRate;
+   mTimeInfo.nanoSeconds = wxGetLocalTimeMillis().ToDouble();
+   mTimeInfo.tempo = 120.0;
+   mTimeInfo.timeSigNumerator = 4;
+   mTimeInfo.timeSigDenominator = 4;
+   mTimeInfo.flags = kVstTempoValid | kVstNanosValid | kVstTransportPlaying;
+
+   // Set processing parameters...power must be off for this
+   callDispatcher(effSetSampleRate, 0, 0, NULL, mSampleRate);
+   callDispatcher(effSetBlockSize, 0, mBlockSize, NULL, 0.0);
+
+   // Turn on the power
+   PowerOn();
+
+   // Set the initial buffer delay
+   SetBufferDelay(mAEffect->initialDelay);
+
+   mReady = true;
+
+   return true;
+}
+
+bool VSTEffect::ProcessFinalize()
+{
+   mReady = false;
+
+   PowerOff();
+
+   return true;
+}
+
+sampleCount VSTEffect::ProcessBlock(float **inbuf, float **outbuf, sampleCount size)
+{
+   // Go let the plugin moleste the samples
+   callProcessReplacing(inbuf, outbuf, size);
+
+   // And track the position
+   mTimeInfo.samplePos += ((double) size / mTimeInfo.sampleRate);
+
+   return size;
+}
+
+int VSTEffect::GetChannelCount()
+{
+   return mNumChannels;
+}
+
+void VSTEffect::SetChannelCount(int numChannels)
+{
+   mNumChannels = numChannels;
+}
+
+bool VSTEffect::RealtimeInitialize()
+{
+   mMasterIn = new float *[mAudioIns];
+   for (int i = 0; i < mAudioIns; i++)
+   {
+      mMasterIn[i] = new float[mBlockSize];
+      memset(mMasterIn[i], 0, mBlockSize * sizeof(float));
+   }
+
+   mMasterOut = new float *[mAudioOuts];
+   for (int i = 0; i < mAudioOuts; i++)
+   {
+      mMasterOut[i] = new float[mBlockSize];
+   }
+
+   return ProcessInitialize();
+}
+
+bool VSTEffect::RealtimeAddProcessor(int numChannels, float sampleRate)
+{
+   VSTEffect *slave = new VSTEffect(mPath, this);
+   mSlaves.Add(slave);
+
+   slave->GetBlockSize(mBlockSize);
+   slave->SetChannelCount(numChannels);
+   slave->SetSampleRate(sampleRate);
+
+   int clen = 0;
+   if (mAEffect->flags & effFlagsProgramChunks)
+   {
+      void *chunk = NULL;
+
+      clen = (int) callDispatcher(effGetChunk, 0, 0, &chunk, 0.0);
+      if (clen != 0)
+      {
+         slave->callSetChunk(false, clen, chunk);
+      }
+   }
+
+   if (clen == 0)
+   {
+      callDispatcher(effBeginSetProgram, 0, 0, NULL, 0.0);
+
+      for (int i = 0; i < mAEffect->numParams; i++)
+      {
+         slave->callSetParameter(i, callGetParameter(i));
+      }
+
+      callDispatcher(effEndSetProgram, 0, 0, NULL, 0.0);
+   }
+
+   return slave->ProcessInitialize();
+}
+
+bool VSTEffect::RealtimeFinalize()
+{
+   for (size_t i = 0, cnt = mSlaves.GetCount(); i < cnt; i++)
+   {
+      mSlaves[i]->ProcessFinalize();
+      delete mSlaves[i];
+   }
+   mSlaves.Clear();
+
+   for (int i = 0; i < mAudioIns; i++)
+   {
+      delete [] mMasterIn[i];
+   }
+   delete [] mMasterIn;
+
+   for (int i = 0; i < mAudioOuts; i++)
+   {
+      delete [] mMasterOut[i];
+   }
+   delete [] mMasterOut;
+
+   return ProcessFinalize();
+}
+
+bool VSTEffect::RealtimeSuspend()
+{
+   PowerOff();
+
+   for (size_t i = 0, cnt = mSlaves.GetCount(); i < cnt; i++)
+   {
+      mSlaves[i]->PowerOff();
+   }
+
+   return true;
+}
+
+bool VSTEffect::RealtimeResume()
+{
+   PowerOn();
+
+   for (size_t i = 0, cnt = mSlaves.GetCount(); i < cnt; i++)
+   {
+      mSlaves[i]->PowerOn();
+   }
+
+   return true;
+}
+
+bool VSTEffect::RealtimeProcessStart()
+{
+   for (int i = 0; i < mAudioIns; i++)
+   {
+      memset(mMasterIn[i], 0, mBlockSize * sizeof(float));
+   }
+
+   mNumSamples = 0;
+
+   return true;
+}
+
+sampleCount VSTEffect::RealtimeProcess(int group, float **inbuf, float **outbuf, sampleCount numSamples)
+{
+   wxASSERT(numSamples <= mBlockSize);
+
+   for (int c = 0; c < mAudioIns; c++)
+   {
+      for (sampleCount s = 0; s < numSamples; s++)
+      {
+         mMasterIn[c][s] += inbuf[c][s];
+      }
+   }
+   mNumSamples = wxMax(numSamples, mNumSamples);
+
+   return mSlaves[group]->ProcessBlock(inbuf, outbuf, numSamples);
+}
+
+bool VSTEffect::RealtimeProcessEnd()
+{
+   ProcessBlock(mMasterIn, mMasterOut, mNumSamples);
 
    return true;
 }
@@ -2802,11 +2075,26 @@ bool VSTEffect::Init()
 // And at the same time I added buffer delay compensation, which allows Audacity
 // to account for latency introduced by some effects.  This is based on information
 // provided by the effect, so it will not work with all effects since they don't
-// allow provide the information (kn0ck0ut is one).
+// all provide the information (kn0ck0ut is one).
 //
-bool VSTEffect::PromptUser()
+bool VSTEffect::ShowInterface(wxWindow *parent, bool forceModal)
 {
-   mProcessLevel = 1;      // in GUI thread
+   if (mDialog)
+   {
+      mDialog->Close(true);
+      return false;
+   }
+
+   //   mProcessLevel = 1;      // in GUI thread
+
+   // Set some defaults since some VSTs need them...these will be reset when
+   // normal or realtime processing begins
+   if (!IsReady())
+   {
+      mSampleRate = 44100;
+      mBlockSize = 8192;
+      ProcessInitialize();
+   }
 
    // I can't believe we haven't run into this before, but a terrible assumption has
    // been made all along...effects do NOT have to provide textual parameters.  Examples
@@ -2824,348 +2112,358 @@ bool VSTEffect::PromptUser()
 #endif
    }
 
-   mDlg = new VSTEffectDialog(mParent, mName, this, mAEffect);
-   mDlg->CentreOnParent();
-   mDlg->ShowModal();
+   mDialog = mHost->CreateUI(parent, this);
+   if (!mDialog)
+   {
+      return false;
+   }
+   mDialog->CentreOnParent();
 
-   bool ret = mDlg->GetReturnCode() != 0;
+   if (SupportsRealtime() && !forceModal)
+   {
+      mDialog->Show();
 
-   mDlg->Destroy();
-   return ret;
+      return false;
+   }
+
+   bool res = mDialog->ShowModal() != 0;
+   mDialog = NULL;
+
+   return res;
 }
 
-bool VSTEffect::Process()
+bool VSTEffect::GetAutomationParameters(EffectAutomationParameters & parms)
 {
-   mProcessLevel = 2;      // in (simulated) audio thread
-
-   CopyInputTracks();
-   bool bGoodResult = true;
-
-   // Some VST effects (Antress Modern is an example), do not like
-   // overly large block sizes.  Unfortunately, I have not found a
-   // way to determine if the effect has a maximum it will support,
-   // so just limit to small value for now.  This will increase
-   // processing time and, it's a shame, because most plugins seem
-   // to be able to handle much larger sizes.
-   //
-   // NOTE:  This no longer seems to apply to more recent versions
-   //        of Antress plugins, but leaving comment and 8192 default
-   //        just in case.
-   gPrefs->Read(wxT("/VST/BufferSize"), &mBufferSize, 8192);
-
-   gPrefs->Read(wxT("/VST/UseBufferDelay"), &mUseBufferDelay, true);
-   mBufferDelay = 0;
-
-   mInBuffer = NULL;
-   mOutBuffer = NULL;
-
-   TrackListIterator iter(mOutputTracks);
-   int count = 0;
-   bool clear = false;
-   WaveTrack *left = (WaveTrack *) iter.First();
-   while (left) {
-      WaveTrack *right;
-      sampleCount len;
-      sampleCount lstart;
-      sampleCount rstart;
-
-      GetSamples(left, &lstart, &len);
-
-      mChannels = 1;
-
-      right = NULL;
-      rstart = 0;
-      if (left->GetLinked() && mInputs > 1) {
-         right = (WaveTrack *) iter.Next();
-         GetSamples(right, &rstart, &len);
-         clear = false;
-         mChannels = 2;
+   for (int i = 0; i < mAEffect->numParams; i++)
+   {
+      wxString name = GetString(effGetParamName, i);
+      if (name.IsEmpty())
+      {
+         name.Printf(wxT("parm_%d"), i);
       }
 
-      if (mBlockSize == 0) {
-         mBlockSize = mWTBlockSize = left->GetMaxBlockSize() * 2;
-
-         // Limit the buffer size to the user specified value since they may
-         // have wanted a smaller value for a reason.
-         if (mBlockSize > mBufferSize) {
-            mBlockSize = mBufferSize;
-         }
-
-         mInBuffer = new float *[mInputs];
-         for (int i = 0; i < mInputs; i++) {
-            mInBuffer[i] = new float[mBlockSize];
-         }
-
-         //Process 2 audacity blockfiles per WaveTrack::Set independently of mBlockSize
-         //because it is extremely slow to do multiple Set()s per blockfile.
-         mOutBuffer = new float *[mOutputs];
-         for (int i = 0; i < mOutputs; i++) {
-            mOutBuffer[i] = new float[mWTBlockSize + mBlockSize];
-         }
-
-         // Turn the power off
-         callDispatcher(effMainsChanged, 0, 0, NULL, 0.0);
-
-         // Set processing parameters
-         callDispatcher(effSetSampleRate, 0, 0, NULL, left->GetRate());
-         callDispatcher(effSetBlockSize, 0, mBlockSize, NULL, 0.0);
+      float value = callGetParameter(i);
+      if (!parms.Write(name, value))
+      {
+         return false;
       }
-
-      // Clear unused input buffers
-      if (!right && !clear) {
-         for (int i = 1; i < mInputs; i++) {
-            for (int j = 0; j < mBlockSize; j++) {
-               mInBuffer[i][j] = 0.0;
-            }
-         }
-         clear = true;
-      }
-
-      bGoodResult = ProcessStereo(count, left, right, lstart, rstart, len);
-      if (!bGoodResult) {
-         break;
-      }
-
-      left = (WaveTrack *) iter.Next();
-      count++;
    }
 
-   if (mOutBuffer) {
-      for (int i = 0; i < mOutputs; i++) {
-         delete mOutBuffer[i];
-      }
-      delete [] mOutBuffer;
-      mOutBuffer = NULL;
-   }
-
-   if (mInBuffer) {
-      for (int i = 0; i < mInputs; i++) {
-         delete mInBuffer[i];
-      }
-      delete [] mInBuffer;
-      mInBuffer = NULL;
-   }
-
-   ReplaceProcessedTracks(bGoodResult);
-   return bGoodResult;
+   return true;
 }
 
-bool VSTEffect::ProcessStereo(int count,
-                              WaveTrack *left, WaveTrack *right,
-                              sampleCount lstart, sampleCount rstart,
-                              sampleCount len)
+bool VSTEffect::SetAutomationParameters(EffectAutomationParameters & parms)
 {
-   bool rc = true;
-   //sampleCount amountLeft = 0;
-
-   // Initialize time info
-   mTimeInfo.samplePos = 0.0;
-   mTimeInfo.sampleRate = left->GetRate();
-   mTimeInfo.flags |= kVstTransportPlaying;
-
-   // Turn the power on
-   callDispatcher(effMainsChanged, 0, 1, NULL, 0.0);
-
-   // Tell effect we're starting to process
-   callDispatcher(effStartProcess, 0, 0, NULL, 0.0);
-
-   // Get the initial latency
-   SetBufferDelay(mAEffect->initialDelay);
-
-   // LLL:
-   //
-   // Some explanation to what this mess is all about.
-   // (see history above)
-   //
-   // For each input block of samples, we pass it to the VST effect along with a
-   // variable output location.  This output location is simply a pointer into a
-   // much larger buffer.  This reduces the number of calls required to add the
-   // samples to the output track which was Michael's speed up mentioned above.
-   //
-   // The buffer delay compensation adds even more complexitity...
-   //
-   // Upon return from the effect, the output samples are "moved to the left" by
-   // the number of samples in the current delay setting, effectively removing the
-   // delay introduced by the effect.
-   //
-   // At the same time the total number of delayed samples are gathered and when the
-   // there is no further input data to process, the loop continues to call the
-   // effect with an empty input buffer until the effect has had a chance to
-   // return all of the remaining delayed samples.
-   //
-   // Please note, that this process has next to no documetation on how it should
-   // work, so a lot of this was from trial and error.  It appears to be correct
-   // though since it has worked with every plugin I've found that adds latency,
-   // with the exception of kn0ck0ut.  I'm sure there are other effects out there
-   // that add latency but do not provide the delay information, so be wary. :-)
-   sampleCount originalLen = len;
-   sampleCount ls = lstart;
-   sampleCount rs = rstart;
-   sampleCount outls = lstart;
-   sampleCount outrs = rstart;
-   sampleCount outBufferCursor = 0;
-   float **outBufSegment = new float *[mOutputs];
-   sampleCount delay = 0;
-   sampleCount delayed = 0;
-   bool cleared = false;
-
-   // Call the effect until we run out of input or delayed samples
-   while (len || delayed) {
-      sampleCount block = mBlockSize;
-
-      // As long as we have input samples, use those
-      if (len) {
-         // At the end if we don't have enough left for a whole block
-         if (block > len) {
-            block = len;
-         }
-
-         // Get the samples into our buffer
-         left->Get((samplePtr)mInBuffer[0], floatSample, ls, block);
-         if (right) {
-            right->Get((samplePtr)mInBuffer[1], floatSample, rs, block);
-         }
-      }
-      // We've reached the end of the input samples, so start processing
-      // delayed ones if there are any
-      else if (delayed) {
-         // At the end if we don't have enough left for a whole block
-         if (block > delayed) {
-            block = delayed;
-         }
-
-         // Clear the input buffer so that we only pass zeros to the effect.
-         if (!cleared) {
-            for (int i = 1; i < mInputs; i++) {
-               for (int j = 0; j < mBlockSize; j++) {
-                  mInBuffer[i][j] = 0.0;
-               }
-            }
-            cleared = true;
-         }
+   callDispatcher(effBeginSetProgram, 0, 0, NULL, 0.0);
+   for (int i = 0; i < mAEffect->numParams; i++)
+   {
+      wxString name = GetString(effGetParamName, i);
+      if (name.IsEmpty())
+      {
+         name.Printf(wxT("parm_%d"), i);
       }
 
-      // Set current output pointer
-      for (int i = 0; i < mOutputs; i++) {
-         outBufSegment[i] = mOutBuffer[i] + outBufferCursor;
+      double d = 0.0;
+      if (!parms.Read(name, &d))
+      {
+         return false;
       }
 
-      // Go let the effect moleste the samples
-      callProcessReplacing(mInBuffer, outBufSegment, block);
-
-      // Get the current number of delayed samples and accumulate
-      delay += mBufferDelay;
-      delayed += mBufferDelay;
-
-      // Reset...the effect will set this again if it has a further
-      // need to delay samples...some effects only set the value once
-      // at the start of processing.
-      mBufferDelay = 0;
-
-      // If the effect has delayed the output by more samples than our
-      // current block size, then we leave the output pointers where they
-      // are.  This will effectively remove those delayed samples from the
-      // output buffer.
-      if (delay >= block) {
-         delay -= block;
-      }
-      // We have some delayed samples, at the beginning of the output samples,
-      // so overlay them by shifting the remaining output samples.
-      else if (delay > 0) {
-         sampleCount oblock = block - delay;
-         for (int i = 0; i < mOutputs; i++) {
-            memmove(outBufSegment[i], outBufSegment[i] + delay, SAMPLE_SIZE(floatSample) * oblock);
-         }
-         delay = 0;
-         outBufferCursor += oblock;
-      }
-      // no delay, just bump to the new output location
-      else {
-         outBufferCursor += block;
-      }
-
-      // Process 2 audacity blockfiles per WaveTrack::Set independently of mBlockSize
-      // because it is extremely slow to do multiple Set()s per blockfile due to Undo History
-      // If we do more optimization we should probably align the Sets to blockfile boundries.
-      if (outBufferCursor >= mWTBlockSize) {
-         left->Set((samplePtr)mOutBuffer[0], floatSample, outls, mWTBlockSize);
-         if (right) {
-            right->Set((samplePtr)mOutBuffer[1], floatSample, outrs, mWTBlockSize);
-         }
-         if (outBufferCursor >= mWTBlockSize) {
-            //snake the buffer down
-            memmove(mOutBuffer[0], mOutBuffer[0] + mWTBlockSize, SAMPLE_SIZE(floatSample) * (outBufferCursor - mWTBlockSize));
-            memmove(mOutBuffer[1], mOutBuffer[1] + mWTBlockSize, SAMPLE_SIZE(floatSample) * (outBufferCursor - mWTBlockSize));
-         }
-         outBufferCursor -= mWTBlockSize;
-         outls += mWTBlockSize;
-         outrs += mWTBlockSize;
-      }
-
-      // Still processing input samples
-      if (len) {
-         len -= block;
-      }
-      // Or maybe we're working on delayed samples
-      else if (delayed) {
-         delayed -= block;
-      }
-
-      // "ls" and "rs" serve as the input sample index for the left and
-      // right channels when processing the input samples.  If we flip
-      // over to processing delayed samples, the simply become counters
-      // for the progress display.
-      ls += block;
-      rs += block;
-      mTimeInfo.samplePos += ((double) block / mTimeInfo.sampleRate);
-
-      if (mInputs > 1) {
-         if (TrackGroupProgress(count, (ls - lstart) / (double)originalLen)) {
-            rc = false;
-            break;
-         }
-      }
-      else {
-         if (TrackProgress(count, (ls - lstart) / (double)originalLen)) {
-            rc = false;
-            break;
-         }
-      }
+      callSetParameter(i, d);
    }
+   callDispatcher(effEndSetProgram, 0, 0, NULL, 0.0);
 
-   // Finish taking the remainder
-   if (outBufferCursor) {
-     left->Set((samplePtr)mOutBuffer[0], floatSample, outls, outBufferCursor);
-     if (right) {
-         right->Set((samplePtr)mOutBuffer[1], floatSample, outrs, outBufferCursor);
-      }
-   }
-
-   // Tell effect we're done
-   callDispatcher(effStopProcess, 0, 0, NULL, 0.0);
-
-   // Turn the power off
-   callDispatcher(effMainsChanged, 0, 0, NULL, 0.0);
-
-   // No longer playing
-   mTimeInfo.samplePos = 0.0;
-   mTimeInfo.sampleRate = 44100.0;
-   mTimeInfo.tempo = 120.0;
-   mTimeInfo.timeSigNumerator = 4;
-   mTimeInfo.timeSigDenominator = 4;
-   mTimeInfo.flags = kVstTempoValid | kVstNanosValid;
-
-   return rc;
+   return true;
 }
 
-void VSTEffect::End()
+// ============================================================================
+// EffectUIClientInterface implementation
+// ============================================================================
+
+void VSTEffect::SetUIHost(EffectUIHostInterface *host)
 {
+   mUIHost = host;
 }
+
+bool VSTEffect::PopulateUI(wxWindow *parent)
+{
+   mDialog = (wxDialog *) wxGetTopLevelParent(parent);
+   mParent = parent;
+
+   mEventHelper = new VSTEffectEventHelper(this);
+   mParent->PushEventHandler(mEventHelper);
+
+   // Determine if the VST editor is supposed to be used or not
+   mHost->GetSharedConfig(wxT("Options"),
+                          wxT("UseGUI"),
+                          mGui,
+                          true);
+   mGui = mAEffect->flags & effFlagsHasEditor ? mGui : false;
+
+   // Must use the GUI editor if parameters aren't provided
+   if (mAEffect->numParams == 0)
+   {
+      mGui = true;
+   }
+
+   // Build the appropriate dialog type
+   if (mGui)
+   {
+      BuildFancy();
+   }
+   else
+   {
+      BuildPlain();
+   }
+
+   return true;
+}
+
+bool VSTEffect::IsGraphicalUI()
+{
+   return mGui;
+}
+
+bool VSTEffect::ValidateUI()
+{
+   return true;
+}
+
+bool VSTEffect::HideUI()
+{
+   return true;
+}
+
+bool VSTEffect::CloseUI()
+{
+   mParent->RemoveEventHandler(mEventHelper);
+   delete mEventHelper;
+
+   PowerOff();
+
+   NeedEditIdle(false);
+
+   RemoveHandler();
+
+   if (mNames)
+   {
+      delete [] mNames;
+      mNames = NULL;
+   }
+
+   if (mSliders)
+   {
+      delete [] mSliders;
+      mSliders = NULL;
+   }
+
+   if (mDisplays)
+   {
+      delete [] mDisplays;
+      mDisplays = NULL;
+   }
+
+   if (mLabels)
+   {
+      delete [] mLabels;
+      mLabels = NULL;
+   }
+
+   mUIHost = NULL;
+   mParent = NULL;
+   mDialog = NULL;
+
+   return true;
+}
+
+void VSTEffect::LoadUserPreset(const wxString & name)
+{
+   LoadParameters(name);
+
+   RefreshParameters();
+}
+
+void VSTEffect::SaveUserPreset(const wxString & name)
+{
+   SaveParameters(name);
+}
+
+wxArrayString VSTEffect::GetFactoryPresets()
+{
+   wxArrayString progs; 
+
+   // Some plugins, like Guitar Rig 5, only report 128 programs while they have hundreds.  While
+   // I was able to come up with a hack in the Guitar Rig case to gather all of the program names
+   // it would not let me set a program outside of the first 128.
+   for (int i = 0; i < mAEffect->numPrograms; i++)
+   {
+      progs.Add(GetString(effGetProgramNameIndexed, i));
+   }
+
+   return progs;
+}
+
+void VSTEffect::LoadFactoryPreset(int id)
+{
+   callSetProgram(id);
+
+   RefreshParameters();
+}
+
+void VSTEffect::LoadFactoryDefaults()
+{
+   LoadParameters(mHost->GetFactoryDefaultsGroup());
+
+   RefreshParameters();
+}
+
+bool VSTEffect::CanExport()
+{
+   return true;
+}
+
+void VSTEffect::ExportPresets()
+{
+   wxString path;
+
+   // Ask the user for the real name
+   //
+   // Passing a valid parent will cause some effects dialogs to malfunction
+   // upon returning from the FileSelector().
+   path = FileSelector(_("Save VST Preset As:"),
+                       FileNames::DataDir(),
+                       wxEmptyString,
+                       wxT("xml"),
+                       wxT("Standard VST bank file (*.fxb)|*.fxb|Standard VST program file (*.fxp)|*.fxp|Audacity VST preset file (*.xml)|*.xml"),
+                       wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxRESIZE_BORDER,
+                       NULL);
+
+   // User canceled...
+   if (path.IsEmpty())
+   {
+      return;
+   }
+
+   wxFileName fn(path);
+   wxString ext = fn.GetExt();
+   if (ext.CmpNoCase(wxT("fxb")) == 0)
+   {
+      SaveFXB(fn);
+   }
+   else if (ext.CmpNoCase(wxT("fxp")) == 0)
+   {
+      SaveFXP(fn);
+   }
+   else if (ext.CmpNoCase(wxT("xml")) == 0)
+   {
+      SaveXML(fn);
+   }
+   else
+   {
+      // This shouldn't happen, but complain anyway
+      wxMessageBox(_("Unrecognized file extension."),
+                   _("Error Saving VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+
+      return;
+   }
+}
+
+//
+// Load an "fxb", "fxp" or Audacuty "xml" file
+//
+// Based on work by Sven Giermann
+//
+void VSTEffect::ImportPresets()
+{
+   wxString path;
+
+   // Ask the user for the real name
+   path = FileSelector(_("Load VST Preset:"),
+                       FileNames::DataDir(),
+                       wxEmptyString,
+                       wxT("xml"),
+                       wxT("VST preset files (*.fxb; *.fxp; *.xml)|*.fxb;*.fxp;*.xml"),
+                       wxFD_OPEN | wxRESIZE_BORDER,
+                       mParent);
+
+   // User canceled...
+   if (path.IsEmpty())
+   {
+      return;
+   }
+
+   wxFileName fn(path);
+   wxString ext = fn.GetExt();
+   bool success = false;
+   if (ext.CmpNoCase(wxT("fxb")) == 0)
+   {
+      success = LoadFXB(fn);
+   }
+   else if (ext.CmpNoCase(wxT("fxp")) == 0)
+   {
+      success = LoadFXP(fn);
+   }
+   else if (ext.CmpNoCase(wxT("xml")) == 0)
+   {
+      success = LoadXML(fn);
+   }
+   else
+   {
+      // This shouldn't happen, but complain anyway
+      wxMessageBox(_("Unrecognized file extension."),
+                   _("Error Loading VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+
+         return;
+   }
+
+   if (!success)
+   {
+      wxMessageBox(_("Unable to load presets file."),
+                   _("Error Loading VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+
+      return;
+   }
+
+   RefreshParameters();
+
+   return;
+}
+
+bool VSTEffect::HasOptions()
+{
+   return true;
+}
+
+void VSTEffect::ShowOptions()
+{
+   VSTEffectOptionsDialog dlg(mParent, mHost);
+   if (dlg.ShowModal())
+   {
+      // Reinitialize configuration settings
+      mHost->GetSharedConfig(wxT("Options"), wxT("BufferSize"), mUserBlockSize, 8192);
+      mHost->GetSharedConfig(wxT("Options"), wxT("UseLatency"), mUseLatency, true);
+   }
+}
+
+// ============================================================================
+// VSTEffect implementation
+// ============================================================================
 
 bool VSTEffect::Load()
 {
    vstPluginMain pluginMain;
    bool success = false;
+
+   long effectID = 0;
+   wxString realPath = mPath.BeforeFirst(wxT(';'));
+   mPath.AfterFirst(wxT(';')).ToLong(&effectID);
+   mCurrentEffectID = (intptr_t) effectID;
 
    mModule = NULL;
    mAEffect = NULL;
@@ -3178,7 +2476,7 @@ bool VSTEffect::Load()
    mResource = -1;
 
    // Convert the path to a CFSTring
-   wxMacCFStringHolder path(mPath);
+   wxMacCFStringHolder path(realPath);
 
    // Convert the path to a URL
    CFURLRef urlRef =
@@ -3186,7 +2484,8 @@ bool VSTEffect::Load()
                                     path,
                                     kCFURLPOSIXPathStyle,
                                     true);
-   if (urlRef == NULL) {
+   if (urlRef == NULL)
+   {
       return false;
    }
 
@@ -3197,13 +2496,15 @@ bool VSTEffect::Load()
    CFRelease(urlRef);
 
    // Bail if the bundle wasn't created
-   if (bundleRef == NULL) {
+   if (bundleRef == NULL) 
+   {
       return false;
    }
 
    // Retrieve a reference to the executable
    CFURLRef exeRef = CFBundleCopyExecutableURL(bundleRef);
-   if (exeRef == NULL) {
+   if (exeRef == NULL)
+   {
       CFRelease(bundleRef);
       return false;
    }
@@ -3216,14 +2517,16 @@ bool VSTEffect::Load()
    CFRelease(exeRef);
 
    // Bail if we couldn't resolve the executable path
-   if (good == FALSE) {
+   if (good == FALSE)
+   {
       CFRelease(bundleRef);
       return false;
    }
 
    // Attempt to open it
    mModule = dlopen((char *) exePath, RTLD_NOW | RTLD_LOCAL);
-   if (mModule == NULL) {
+   if (mModule == NULL)
+   {
       CFRelease(bundleRef);
       return false;
    }
@@ -3232,12 +2535,14 @@ bool VSTEffect::Load()
    pluginMain = (vstPluginMain) dlsym(mModule, "VSTPluginMain");
 
    // If not found, try finding the old entry point
-   if (pluginMain == NULL) {
+   if (pluginMain == NULL)
+   {
       pluginMain = (vstPluginMain) dlsym(mModule, "main_macho");
    }
 
    // Must not be a VST plugin
-   if (pluginMain == NULL) {
+   if (pluginMain == NULL)
+   {
       dlclose(mModule);
       mModule = NULL;
       CFRelease(bundleRef);
@@ -3251,28 +2556,32 @@ bool VSTEffect::Load()
    // Open the resource map ... some plugins (like GRM Tools) need this.
    mResource = (int) CFBundleOpenBundleResourceMap(bundleRef);
 
-#else
+#elif defined(__WXMSW__)
 
    {
       wxLogNull nolog;
 
       // Try to load the library
-      wxDynamicLibrary *lib = new wxDynamicLibrary(mPath);
-      if (!lib) {
+      wxDynamicLibrary *lib = new wxDynamicLibrary(realPath);
+      if (!lib) 
+      {
          return false;
       }
 
       // Bail if it wasn't successful
-      if (!lib->IsLoaded()) {
+      if (!lib->IsLoaded())
+      {
          delete lib;
          return false;
       }
 
       // Try to find the entry point, while suppressing error messages
       pluginMain = (vstPluginMain) lib->GetSymbol(wxT("VSTPluginMain"));
-      if (pluginMain == NULL) {
+      if (pluginMain == NULL)
+      {
          pluginMain = (vstPluginMain) lib->GetSymbol(wxT("main"));
-         if (pluginMain == NULL) {
+         if (pluginMain == NULL)
+         {
             delete lib;
             return false;
          }
@@ -3282,37 +2591,141 @@ bool VSTEffect::Load()
       mModule = lib;
    }
 
+#else
+
+   // Attempt to load it
+   //
+   // Spent a few days trying to figure out why some VSTs where running okay and
+   // others were hit or miss.  The cause was that we export all of Audacity's
+   // symbols and some of the loaded libraries were picking up Audacity's and 
+   // not their own.
+   //
+   // So far, I've only seen this issue on Linux, but we might just be getting
+   // lucky on the Mac and Windows.  The sooner we stop exporting everything
+   // the better.
+   //
+   // To get around the problem, I just added the RTLD_DEEPBIND flag to the load
+   // and that "basically" puts Audacity last when the loader needs to resolve
+   // symbols.
+   //
+   // Once we define a proper external API, the flags can be removed.
+   void *lib = dlopen((const char *)wxString(realPath).ToUTF8(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+   if (!lib) 
+   {
+      return false;
+   }
+
+   // Try to find the entry point, while suppressing error messages
+   pluginMain = (vstPluginMain) dlsym(lib, "VSTPluginMain");
+   if (pluginMain == NULL)
+   {
+      pluginMain = (vstPluginMain) dlsym(lib, "main");
+      if (pluginMain == NULL)
+      {
+         dlclose(lib);
+         return false;
+      }
+   }
+
+   // Save the library reference
+   mModule = lib;
+
 #endif
 
    // Initialize the plugin
-   mAEffect = pluginMain(audioMaster);
+   try
+   {
+      mAEffect = pluginMain(VSTEffect::AudioMaster);
+   }
+   catch (...)
+   {
+      wxLogMessage(_("VST plugin initialization failed\n"));
+      mAEffect = NULL;
+   }
 
    // Was it successful?
-   if (mAEffect) {
+   if (mAEffect)
+   {
+      // Save a reference to ourselves
       //
-      mAEffect->user = this;
+      // Note:  Some hosts use "user" and some use "ptr2/resvd2".  It might
+      //        be worthwhile to check if user is NULL before using it and
+      //        then falling back to "ptr2/resvd2".
+      mAEffect->ptr2 = this;
 
-      //
+      // Give the plugin an initial sample rate and blocksize
+      callDispatcher(effSetSampleRate, 0, 0, NULL, 48000.0);
+      callDispatcher(effSetBlockSize, 0, 512, NULL, 0);
+
+      // Ask the plugin to identify itself...might be needed for older plugins
+      callDispatcher(effIdentify, 0, 0, NULL, 0);
+
+      // Open the plugin
       callDispatcher(effOpen, 0, 0, NULL, 0.0);
+
+      // Set it again in case plugin ignored it before the effOpen
+      callDispatcher(effSetSampleRate, 0, 0, NULL, 48000.0);
+      callDispatcher(effSetBlockSize, 0, 512, NULL, 0);
 
       // Ensure that it looks like a plugin and can deal with ProcessReplacing
       // calls.  Also exclude synths for now.
       if (mAEffect->magic == kEffectMagic &&
          !(mAEffect->flags & effFlagsIsSynth) &&
-         mAEffect->flags & effFlagsCanReplacing) {
-
-         mVendor = GetString(effGetVendorString);
+         mAEffect->flags & effFlagsCanReplacing)
+      {
          mName = GetString(effGetEffectName);
-         mInputs = mAEffect->numInputs;
-         mOutputs = mAEffect->numOutputs;
+         if (mName.length() == 0)
+         {
+            mName = GetString(effGetProductString);
+            if (mName.length() == 0)
+            {
+               wxFileName f(realPath);
+               mName = f.GetName();
+            }
+         }
+         mVendor = GetString(effGetVendorString);
+         mVersion = wxINT32_SWAP_ON_LE(callDispatcher(effGetVendorVersion, 0, 0, NULL, 0));
+         if (mVersion == 0)
+         {
+            mVersion = wxINT32_SWAP_ON_LE(mAEffect->version);
+         }
 
-         // We could even go so far as to run a small test here.
+         if (mAEffect->flags & effFlagsHasEditor || mAEffect->numParams != 0)
+         {
+            mInteractive = true;
+         }
 
+         mAudioIns = mAEffect->numInputs;
+         mAudioOuts = mAEffect->numOutputs;
+
+         mMidiIns = 0;
+         mMidiOuts = 0;
+
+         // Check to see if parameters can be automated.  This isn't a gaurantee
+         // since it could be that the effect simply doesn't support the opcode.
+         mAutomatable = false;
+         for (int i = 0; i < mAEffect->numParams; i++)
+         {
+            if (callDispatcher(effCanBeAutomated, 0, i, NULL, 0.0))
+            {
+               mAutomatable = true;
+               break;
+            }
+         }
+
+         // Make sure we start out with a valid program selection
+         // I've found one plugin (SoundHack +morphfilter) that will
+         // crash Audacity when saving the initial default parameters
+         // with this.
+         callSetProgram(0);
+
+         // Pretty confident that we're good to go
          success = true;
       }
    }
 
-   if (!success) {
+   if (!success)
+   {
       Unload();
    }
 
@@ -3321,25 +2734,54 @@ bool VSTEffect::Load()
 
 void VSTEffect::Unload()
 {
-   if (mAEffect) {
-      callDispatcher(effClose, 0, 0, NULL, 0.0);
+   if (mDialog)
+   {
+      CloseUI();
    }
 
-   if (mModule) {
+   if (mTimer)
+   {
+      mTimer->Stop();
+      delete mTimer;
+      mTimer = NULL;
+   }
+
+   if (mAEffect)
+   {
+      // Turn the power off
+      PowerOff();
+
+      // Finally, close the plugin
+      callDispatcher(effClose, 0, 0, NULL, 0.0);
+      mAEffect = NULL;
+   }
+
+   if (mModule)
+   {
 #if defined(__WXMAC__)
-      if (mResource != -1) {
+
+      if (mResource != -1)
+      {
          CFBundleCloseBundleResourceMap((CFBundleRef) mBundleRef, mResource);
          mResource = -1;
       }
 
-      if (mBundleRef != NULL) {
+      if (mBundleRef != NULL)
+      {
          CFRelease((CFBundleRef) mBundleRef);
          mBundleRef = NULL;
       }
 
       dlclose(mModule);
-#else
+
+#elif defined(__WXMSW__)
+
       delete (wxDynamicLibrary *) mModule;
+
+#else
+
+      dlclose(mModule);
+
 #endif
 
       mModule = NULL;
@@ -3347,213 +2789,147 @@ void VSTEffect::Unload()
    }
 }
 
-void VSTEffect::ScanOnePlugin( const wxString & file )
+wxArrayInt VSTEffect::GetEffectIDs()
 {
-   const wxChar * argv[4];
-   argv[0] = PlatformCompatibility::GetExecutablePath().c_str();
-   argv[1] = VSTCMDKEY;
-   argv[2] = file.c_str();
-   argv[3] = NULL;
-   // ToDo: do we need a try--catch around this in case a bad plug-in
-   // fails? (JKC Nov09)
-   wxExecute((wxChar **) argv, wxEXEC_SYNC | wxEXEC_NODISABLE, NULL);
-}
+   wxArrayInt effectIDs;
 
-int VSTEffect::ShowPluginListDialog( const wxArrayString & files )
-{
-   PluginRegistrationDialog d( wxGetApp().GetTopWindow(), files );
-   return d.ShowModal();
-}
+   // Are we a shell?
+   if ((VstPlugCategory) callDispatcher(effGetPlugCategory, 0, 0, NULL, 0) == kPlugCategShell)
+   {
+      char name[64];
+      int effectID;
 
-void VSTEffect::ShowProgressDialog( const wxString & longest, const wxArrayString & files )
-{
-   ProgressDialog *progress = new ProgressDialog(_("Scanning VST Plugins"),
-                                                 longest,
-                                                 pdlgHideStopButton);
-//   progress->SetSize(wxSize(500, -1));
-   progress->CenterOnScreen();
-
-   size_t cnt = files.GetCount();
-   for (size_t i = 0; i < cnt; i++) {
-      wxString file = files[i];
-      int status = progress->Update(wxLongLong(i),
-                                    wxLongLong(cnt),
-                                    wxString::Format(_("Checking %s"), file.c_str()));
-      if (status != eProgressSuccess) {
-         break;
-      }
-      ScanOnePlugin( file );
-   }
-
-   delete progress;
-}
-
-/* static */
-int VSTEffect::Scan()
-{
-   wxArrayString audacityPathList = wxGetApp().audacityPathList;
-   wxArrayString pathList;
-   wxArrayString files;
-
-   // Check for the VST_PATH environment variable
-   wxString vstpath = wxGetenv(wxT("VST_PATH"));
-   if (!vstpath.IsEmpty()) {
-      wxGetApp().AddUniquePathToPathList(vstpath, pathList);
-   }
-
-   // Add Audacity specific paths
-   for (size_t i = 0; i < audacityPathList.GetCount(); i++) {
-      wxString prefix = audacityPathList[i] + wxFILE_SEP_PATH;
-      wxGetApp().AddUniquePathToPathList(prefix + VSTPLUGINTYPE,
-                                         pathList);
-      wxGetApp().AddUniquePathToPathList(prefix + wxT("plugins"),
-                                         pathList);
-      wxGetApp().AddUniquePathToPathList(prefix + wxT("plug-ins"),
-                                         pathList);
-   }
-
-#if defined(__WXMAC__)
-#define VSTPATH wxT("/Library/Audio/Plug-Ins/VST")
-
-   // Look in /Library/Audio/Plug-Ins/VST and $HOME/Library/Audio/Plug-Ins/VST
-   wxGetApp().AddUniquePathToPathList(VSTPATH, pathList);
-   wxGetApp().AddUniquePathToPathList(wxString(wxGetenv(wxT("HOME"))) + VSTPATH,
-                                      pathList);
-
-   // Recursively search all paths for Info.plist files.  This will identify all
-   // bundles.
-   wxGetApp().FindFilesInPathList(wxT("Info.plist"), pathList, files, wxDIR_DEFAULT);
-
-   // Remove the 'Contents/Info.plist' portion of the names
-   for (size_t i = 0; i < files.GetCount(); i++) {
-      files[i] = wxPathOnly(wxPathOnly(files[i]));
-      if (!files[i].EndsWith(wxT(".vst"))) {
-         files.RemoveAt(i--);
+      effectID = (int) callDispatcher(effShellGetNextPlugin, 0, 0, &name, 0);
+      while (effectID)
+      {
+         effectIDs.Add(effectID);
+         effectID = (int) callDispatcher(effShellGetNextPlugin, 0, 0, &name, 0);
       }
    }
 
-#elif defined(__WXMSW__)
-
-   TCHAR dpath[MAX_PATH];
-   TCHAR tpath[MAX_PATH];
-   DWORD len;
-
-   // Try HKEY_CURRENT_USER registry key first
-   len = sizeof(tpath) / sizeof(TCHAR);
-   if (SHRegGetUSValue(wxT("Software\\VST"),
-                       wxT("VSTPluginsPath"),
-                       NULL,
-                       tpath,
-                       &len,
-                       FALSE,
-                       NULL,
-                       0) == ERROR_SUCCESS) {
-      tpath[len] = 0;
-      dpath[0] = 0;
-      ExpandEnvironmentStrings(tpath, dpath, WXSIZEOF(dpath));
-      wxGetApp().AddUniquePathToPathList(LAT1CTOWX(dpath), pathList);
-   }
-
-   // Then try HKEY_LOCAL_MACHINE registry key
-   len = sizeof(tpath) / sizeof(TCHAR);
-   if (SHRegGetUSValue(wxT("Software\\VST"),
-                       wxT("VSTPluginsPath"),
-                       NULL,
-                       tpath,
-                       &len,
-                       TRUE,
-                       NULL,
-                       0) == ERROR_SUCCESS) {
-      tpath[len] = 0;
-      dpath[0] = 0;
-      ExpandEnvironmentStrings(tpath, dpath, WXSIZEOF(dpath));
-      wxGetApp().AddUniquePathToPathList(LAT1CTOWX(dpath), pathList);
-   }
-
-   // Add the default path last
-   dpath[0] = 0;
-   ExpandEnvironmentStrings(wxT("%ProgramFiles%\\Steinberg\\VSTPlugins"),
-                            dpath,
-                            WXSIZEOF(dpath));
-   wxGetApp().AddUniquePathToPathList(LAT1CTOWX(dpath), pathList);
-
-   // Recursively scan for all DLLs
-   wxGetApp().FindFilesInPathList(wxT("*.dll"), pathList, files, wxDIR_DEFAULT);
-
-#else
-
-   // Recursively scan for all shared objects
-   wxGetApp().FindFilesInPathList(wxT("*.so"), pathList, files);
-
-#endif
-
-   files.Sort();
-
-   // This is a hack to allow for long paths in the progress dialog.  The
-   // progress dialog should really truncate the message if it's too wide
-   // for the dialog.
-   size_t cnt = files.GetCount();
-   wxString longest;
-
-   // JKC: Let's not show the progress dialog if there are no
-   // files to test.
-   if( cnt <= 0 )
-      return wxID_OK;
-
-   for (size_t i = 0; i < cnt; i++) {
-      if (files[i].Length() > longest.Length()) {
-         longest = files[i];
-      }
-   }
-   //Choose the first for the original version which scans them all
-   //The second to selectively scan.
-   //ShowProgressDialog( longest, files );
-   return ShowPluginListDialog(  files );
+   return effectIDs;
 }
 
-/* static */
-void VSTEffect::Check(const wxChar *fname)
+void VSTEffect::LoadParameters(const wxString & group)
 {
-   PluginManager & pm = PluginManager::Get();
+   wxString value;
 
-   pm.Open();
+   VstPatchChunkInfo info = {1, mAEffect->uniqueID, mAEffect->version, mAEffect->numParams};
+   mHost->GetPrivateConfig(group, wxT("UniqueID"), info.pluginUniqueID, info.pluginUniqueID);
+   mHost->GetPrivateConfig(group, wxT("Version"), info.pluginVersion, info.pluginVersion);
+   mHost->GetPrivateConfig(group, wxT("Elements"), info.numElements, info.numElements);
 
-   VSTEffect *e = new VSTEffect(fname);
+   if ((info.pluginUniqueID != mAEffect->uniqueID) ||
+       (info.pluginVersion != mAEffect->version) ||
+       (info.numElements != mAEffect->numParams))
+   {
+      return;
+   }
 
-   pm.Close();
+   if (mHost->GetPrivateConfig(group, wxT("Chunk"), value, wxEmptyString))
+   {
+      char *buf = new char[value.length() / 4 * 3];
 
-   if (e) {
-      delete e;
+      int len = VSTEffect::b64decode(value, buf);
+      if (len)
+      {
+         callSetChunk(true, len, buf, &info);
+      }
+      delete [] buf;
+
+      return;
+   }
+
+   if (callDispatcher(effBeginLoadProgram, 0, 0, &info, 0.0) == -1)
+   {
+      return;
+   }
+
+   callDispatcher(effBeginSetProgram, 0, 0, NULL, 0.0);
+   if (mHost->GetPrivateConfig(group, wxT("Value"), value, wxEmptyString))
+   {
+      size_t cnt = mSlaves.GetCount();
+      
+      wxStringTokenizer st(value, wxT(','));
+      for (int i = 0; st.HasMoreTokens(); i++)
+      {
+         double val = 0.0;
+         st.GetNextToken().ToDouble(&val);
+
+         if (val >= -1.0 && val <= 1.0)
+         {
+            callSetParameter(i, val);
+            for (size_t i = 0; i < cnt; i++)
+            {
+               mSlaves[i]->callSetParameter(i, val);
+            }
+         }
+      }
+   }
+   callDispatcher(effEndSetProgram, 0, 0, NULL, 0.0);
+}
+
+void VSTEffect::SaveParameters(const wxString & group)
+{
+   mHost->SetPrivateConfig(group, wxT("UniqueID"), mAEffect->uniqueID);
+   mHost->SetPrivateConfig(group, wxT("Version"), mAEffect->version);
+   mHost->SetPrivateConfig(group, wxT("Elements"), mAEffect->numParams);
+
+   if (mAEffect->flags & effFlagsProgramChunks)
+   {
+      void *chunk = NULL;
+      int clen = (int) callDispatcher(effGetChunk, 1, 0, &chunk, 0.0);
+      if (clen > 0)
+      {
+         mHost->SetPrivateConfig(group, wxT("Chunk"), VSTEffect::b64encode(chunk, clen));
+         return;
+      }
+   }
+
+   wxString parms;
+   for (int i = 0; i < mAEffect->numParams; i++)
+   {
+      parms += wxString::Format(wxT(",%f"), callGetParameter(i));
+   }
+
+   mHost->SetPrivateConfig(group, wxT("Value"), parms.Mid(1));
+}
+
+void VSTEffect::OnTimer()
+{
+   wxRecursionGuard guard(mTimerGuard);
+
+   // Ignore it if we're recursing
+   if (guard.IsInside())
+   {
+      return;
+   }
+
+   if (mWantsIdle)
+   {
+      int ret = callDispatcher(effIdle, 0, 0, NULL, 0.0);
+      if (!ret)
+      {
+         mWantsIdle = false;
+      }
+   }
+
+   if (mWantsEditIdle)
+   {
+      callDispatcher(effEditIdle, 0, 0, NULL, 0.0);
    }
 }
 
-int VSTEffect::NeedIdle()
+void VSTEffect::NeedIdle()
 {
-   int ret = callDispatcher(effIdle, 0, 0, NULL, 0.0);
-
-   // Effect wants continuous idle calls
-   if (ret) {
-      if (!mTimer) {
-         mTimer = new VSTEffectTimer(this);
-      }
-      if (mTimer) {
-         mTimer->Start(100);
-      }
-   }
-   else {
-      if (mTimer) {
-         mTimer->Stop();
-         delete mTimer;
-         mTimer = NULL;
-      }
-   }
-
-   return ret;
+   mWantsIdle = true;
+   mTimer->Start(100);
 }
 
-int VSTEffect::GetChannels()
+void VSTEffect::NeedEditIdle(bool state)
 {
-   return mChannels;
+   mWantsEditIdle = state;
+   mTimer->Start(100);
 }
 
 VstTimeInfo *VSTEffect::GetTimeInfo()
@@ -3572,14 +2948,45 @@ int VSTEffect::GetProcessLevel()
    return mProcessLevel;
 }
 
+void VSTEffect::PowerOn()
+{
+   if (!mHasPower)
+   {
+      // Turn the power on
+      callDispatcher(effMainsChanged, 0, 1, NULL, 0.0);
+
+      // Tell the effect we're going to start processing
+      callDispatcher(effStartProcess, 0, 0, NULL, 0.0);
+
+      // Set state
+      mHasPower = true;
+   }
+}
+
+void VSTEffect::PowerOff()
+{
+   if (mHasPower)
+   {
+      // Tell the effect we're going to stop processing
+      callDispatcher(effStopProcess, 0, 0, NULL, 0.0);
+
+      // Turn the power off
+      callDispatcher(effMainsChanged, 0, 0, NULL, 0.0);
+
+      // Set state
+      mHasPower = false;
+   }
+}
+
 void VSTEffect::SizeWindow(int w, int h)
 {
    // Queue the event to make the resizes smoother
-   if (mDlg) {
+   if (mParent)
+   {
       wxCommandEvent sw(EVT_SIZEWINDOW);
       sw.SetInt(w);
       sw.SetExtraLong(h);
-      mDlg->AddPendingEvent(sw);
+      mParent->GetEventHandler()->AddPendingEvent(sw);
    }
 
    return;
@@ -3587,19 +2994,42 @@ void VSTEffect::SizeWindow(int w, int h)
 
 void VSTEffect::UpdateDisplay()
 {
+#if 0
    // Tell the dialog to refresh effect information
-   if (mDlg) {
+   if (mParent)
+   {
       wxCommandEvent ud(EVT_UPDATEDISPLAY);
-      mDlg->AddPendingEvent(ud);
+      mParent->GetEventHandler()->AddPendingEvent(ud);
    }
+#endif
+   return;
+}
+
+void VSTEffect::Automate(int index, float value)
+{
+   // Just ignore it if we're a slave
+   if (mMaster)
+   {
+      return;
+   }
+
+   for (size_t i = 0, cnt = mSlaves.GetCount(); i < cnt; i++)
+   {
+      mSlaves[i]->callSetParameter(index, value);
+   }
+
+   return;
 }
 
 void VSTEffect::SetBufferDelay(int samples)
 {
    // We do not support negative delay
-   if (samples >= 0 && mUseBufferDelay) {
+   if (samples >= 0 && mUseLatency)
+   {
       mBufferDelay = samples;
    }
+
+   return;
 }
 
 int VSTEffect::GetString(wxString & outstr, int opcode, int index)
@@ -3610,7 +3040,7 @@ int VSTEffect::GetString(wxString & outstr, int opcode, int index)
 
    callDispatcher(opcode, index, 0, buf, 0.0);
 
-   outstr = LAT1CTOWX(buf);
+   outstr = wxString::FromUTF8(buf);
 
    return 0;
 }
@@ -3627,8 +3057,7 @@ wxString VSTEffect::GetString(int opcode, int index)
 void VSTEffect::SetString(int opcode, const wxString & str, int index)
 {
    char buf[256];
-
-   strcpy(buf, str.Left(255).mb_str());
+   strcpy(buf, str.Left(255).ToUTF8());
 
    callDispatcher(opcode, index, 0, buf, 0.0);
 }
@@ -3636,12 +3065,9 @@ void VSTEffect::SetString(int opcode, const wxString & str, int index)
 intptr_t VSTEffect::callDispatcher(int opcode,
                                    int index, intptr_t value, void *ptr, float opt)
 {
+   // Needed since we might be in the dispatcher when the timer pops
+   wxCRIT_SECT_LOCKER(locker, mDispatcherLock);
    return mAEffect->dispatcher(mAEffect, opcode, index, value, ptr, opt);
-}
-
-void VSTEffect::callProcess(float **inputs, float **outputs, int sampleframes)
-{
-   mAEffect->process(mAEffect, inputs, outputs, sampleframes);
 }
 
 void VSTEffect::callProcessReplacing(float **inputs,
@@ -3650,14 +3076,1574 @@ void VSTEffect::callProcessReplacing(float **inputs,
    mAEffect->processReplacing(mAEffect, inputs, outputs, sampleframes);
 }
 
-void VSTEffect::callSetParameter(int index, float parameter)
-{
-   mAEffect->setParameter(mAEffect, index, parameter);
-}
-
 float VSTEffect::callGetParameter(int index)
 {
    return mAEffect->getParameter(mAEffect, index);
+}
+
+void VSTEffect::callSetParameter(int index, float value)
+{
+   if (callDispatcher(effCanBeAutomated, 0, index, NULL, 0.0))
+   {
+      mAEffect->setParameter(mAEffect, index, value);
+
+      for (size_t i = 0, cnt = mSlaves.GetCount(); i < cnt; i++)
+      {
+         mSlaves[i]->callSetParameter(index, value);
+      }
+   }
+}
+
+void VSTEffect::callSetProgram(int index)
+{
+   callDispatcher(effBeginSetProgram, 0, 0, NULL, 0.0);
+
+   callDispatcher(effSetProgram, 0, index, NULL, 0.0);
+   for (size_t i = 0, cnt = mSlaves.GetCount(); i < cnt; i++)
+   {
+      mSlaves[i]->callSetProgram(index);
+   }
+
+   callDispatcher(effEndSetProgram, 0, 0, NULL, 0.0);
+}
+
+void VSTEffect::callSetChunk(bool isPgm, int len, void *buf)
+{
+   VstPatchChunkInfo info;
+
+   memset(&info, 0, sizeof(info));
+   info.version = 1;
+   info.pluginUniqueID = mAEffect->uniqueID;
+   info.pluginVersion = mAEffect->version;
+   info.numElements = isPgm ? mAEffect->numParams : mAEffect->numPrograms;
+
+   callSetChunk(isPgm, len, buf, &info);
+}
+
+void VSTEffect::callSetChunk(bool isPgm, int len, void *buf, VstPatchChunkInfo *info)
+{
+   if (isPgm)
+   {
+      // Ask the effect if this is an acceptable program
+      if (callDispatcher(effBeginLoadProgram, 0, 0, info, 0.0) == -1)
+      {
+         return;
+      }
+   }
+   else
+   {
+      // Ask the effect if this is an acceptable bank
+      if (callDispatcher(effBeginLoadBank, 0, 0, info, 0.0) == -1)
+      {
+         return;
+      }
+   }
+
+   callDispatcher(effBeginSetProgram, 0, 0, NULL, 0.0);
+   callDispatcher(effSetChunk, isPgm ? 1 : 0, len, buf, 0.0);
+   callDispatcher(effEndSetProgram, 0, 0, NULL, 0.0);
+
+   for (size_t i = 0, cnt = mSlaves.GetCount(); i < cnt; i++)
+   {
+      mSlaves[i]->callSetChunk(isPgm, len, buf, info);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Base64 en/decoding
+//
+// Original routines marked as public domain and found at:
+//
+// http://en.wikibooks.org/wiki/Algorithm_implementation/Miscellaneous/Base64
+//
+////////////////////////////////////////////////////////////////////////////////
+
+// Lookup table for encoding
+const static wxChar cset[] = wxT("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
+const static char padc = wxT('=');
+
+wxString VSTEffect::b64encode(const void *in, int len)
+{
+   unsigned char *p = (unsigned char *) in;
+   wxString out;
+
+   unsigned long temp;
+   for (int i = 0; i < len / 3; i++)
+   {
+      temp  = (*p++) << 16; //Convert to big endian
+      temp += (*p++) << 8;
+      temp += (*p++);
+      out += cset[(temp & 0x00FC0000) >> 18];
+      out += cset[(temp & 0x0003F000) >> 12];
+      out += cset[(temp & 0x00000FC0) >> 6];
+      out += cset[(temp & 0x0000003F)];
+   }
+
+   switch (len % 3)
+   {
+      case 1:
+         temp  = (*p++) << 16; //Convert to big endian
+         out += cset[(temp & 0x00FC0000) >> 18];
+         out += cset[(temp & 0x0003F000) >> 12];
+         out += padc;
+         out += padc;
+      break;
+
+      case 2:
+         temp  = (*p++) << 16; //Convert to big endian
+         temp += (*p++) << 8;
+         out += cset[(temp & 0x00FC0000) >> 18];
+         out += cset[(temp & 0x0003F000) >> 12];
+         out += cset[(temp & 0x00000FC0) >> 6];
+         out += padc;
+      break;
+   }
+
+   return out;
+}
+
+int VSTEffect::b64decode(wxString in, void *out)
+{
+   int len = in.length();
+   unsigned char *p = (unsigned char *) out;
+
+   if (len % 4)  //Sanity check
+   {
+      return 0;
+   }
+
+   int padding = 0;
+   if (len)
+   {
+      if (in[len - 1] == padc)
+      {
+         padding++;
+      }
+
+      if (in[len - 2] == padc)
+      {
+         padding++;
+      }
+   }
+
+   //const char *a = in.mb_str();
+   //Setup a vector to hold the result
+   unsigned long temp = 0; //Holds decoded quanta
+   int i = 0;
+   while (i < len)
+   {
+      for (int quantumPosition = 0; quantumPosition < 4; quantumPosition++)
+      {
+         unsigned char c = in[i];
+         temp <<= 6;
+
+         if (c >= 0x41 && c <= 0x5A)
+         {
+            temp |= c - 0x41;
+         }
+         else if (c >= 0x61 && c <= 0x7A)
+         {
+            temp |= c - 0x47;
+         }
+         else if (c >= 0x30 && c <= 0x39)
+         {
+            temp |= c + 0x04;
+         }
+         else if (c == 0x2B)
+         {
+            temp |= 0x3E;
+         }
+         else if (c == 0x2F)
+         {
+            temp |= 0x3F;
+         }
+         else if (c == padc)
+         {
+            switch (len - i)
+            {
+               case 1: //One pad character
+                  *p++ = (temp >> 16) & 0x000000FF;
+                  *p++ = (temp >> 8) & 0x000000FF;
+                  return p - (unsigned char *) out;
+               case 2: //Two pad characters
+                  *p++ = (temp >> 10) & 0x000000FF;
+                  return p - (unsigned char *) out;
+            }
+         }
+         i++;
+      }
+      *p++ = (temp >> 16) & 0x000000FF;
+      *p++ = (temp >> 8) & 0x000000FF;
+      *p++ = temp & 0x000000FF;
+   }
+
+   return p - (unsigned char *) out;
+}
+
+void VSTEffect::RemoveHandler()
+{
+#if defined(__WXMAC__)
+   if (mWindowRef)
+   {
+      callDispatcher(effEditClose, 0, 0, mWindowRef, 0.0);
+      mWindowRef = 0;
+   }
+
+   if (mOverlayViewTrackingHandlerRef)
+   {
+      ::RemoveEventHandler(mOverlayViewTrackingHandlerRef);
+      mOverlayViewTrackingHandlerRef = 0;
+   }
+
+   if (mOverlayRootTrackingHandlerRef)
+   {
+      ::RemoveEventHandler(mOverlayRootTrackingHandlerRef);
+      mOverlayRootTrackingHandlerRef = 0;
+   }
+
+   if (mOverlayEventHandlerRef)
+   {
+      ::RemoveEventHandler(mOverlayEventHandlerRef);
+      mOverlayEventHandlerRef = 0;
+   }
+
+   if (mOverlayEventHandlerUPP)
+   {
+      DisposeEventHandlerUPP(mOverlayEventHandlerUPP);
+      mOverlayEventHandlerUPP = 0;
+   }
+
+   if (mSubviewTrackingHandlerRef)
+   {
+      ::RemoveEventHandler(mSubviewTrackingHandlerRef);
+      mSubviewTrackingHandlerRef = 0;
+   }
+
+   if (mViewTrackingHandlerRef)
+   {
+      ::RemoveEventHandler(mViewTrackingHandlerRef);
+      mViewTrackingHandlerRef = 0;
+   }
+
+   if (mRootTrackingHandlerRef)
+   {
+      ::RemoveEventHandler(mRootTrackingHandlerRef);
+      mRootTrackingHandlerRef = 0;
+   }
+
+   if (mTrackingHandlerUPP)
+   {
+      DisposeEventHandlerUPP(mTrackingHandlerUPP);
+      mTrackingHandlerUPP = 0;
+   }
+
+   if (mWindowEventHandlerRef)
+   {
+      ::RemoveEventHandler(mWindowEventHandlerRef);
+      mWindowEventHandlerRef = 0;
+      mDialog->MacInstallTopLevelWindowEventHandler();
+   }
+
+   if (mWindowEventHandlerUPP)
+   {
+      DisposeEventHandlerUPP(mWindowEventHandlerUPP);
+      mWindowEventHandlerUPP = 0;
+   }
+#elif defined(__WXMSW__)
+   if (mHwnd)
+   {
+      callDispatcher(effEditClose, 0, 0, mHwnd, 0.0);
+      mHwnd = 0;
+   }
+#else
+   if (mXwin)
+   {
+      callDispatcher(effEditClose, 0, (intptr_t)mXdisp, (void *)mXwin, 0.0);
+      mXdisp = 0;
+      mXwin = 0;
+   }
+#endif
+}
+
+void VSTEffect::BuildFancy()
+{
+   struct
+   {
+      short top, left, bottom, right;
+   } *rect;
+
+   // Turn the power on...some effects need this when the editor is open
+   PowerOn();
+
+   // Some effects like to have us get their rect before opening them.
+   callDispatcher(effEditGetRect, 0, 0, &rect, 0.0);
+
+#if defined(__WXMAC__)
+   // Retrieve the current window and the one above it.  The window list
+   // is kept in top-most to bottom-most order, so we'll use that to
+   // determine if another window was opened above ours.
+   mWindowRef = (WindowRef) mDialog->MacGetWindowRef();
+   mPreviousRef = GetPreviousWindow(mWindowRef);
+
+   // Install the event handler on our window
+   mWindowEventHandlerUPP = NewEventHandlerUPP(WindowEventHandler);
+   InstallWindowEventHandler(mWindowRef,
+                             mWindowEventHandlerUPP,
+                             GetEventTypeCount(WindowEventList),
+                             WindowEventList,
+                             this,
+                             &mWindowEventHandlerRef);
+
+   // Find the content view within our window
+   ControlRef root = HIViewGetRoot(mWindowRef);
+   HIViewRef view;
+   HIViewFindByID(root, kHIViewWindowContentID, &view);
+
+   // And ask the effect to add it's GUI
+   callDispatcher(effEditOpen, 0, 0, mWindowRef, 0.0);
+
+   // Get the subview it created
+   HIViewRef subview = HIViewGetFirstSubview(view);
+   if (subview == NULL)
+   {
+      // Doesn't seem the effect created the subview, so switch
+      // to the plain dialog.  This can happen when an effect
+      // uses the content view directly.  As of this time, we
+      // will not try to support those and fall back to the
+      // textual interface.
+      mGui = false;
+      RemoveHandler();
+      BuildPlain();
+      return;
+   }
+
+   // Install the tracking event handler on our views
+   mTrackingHandlerUPP = NewEventHandlerUPP(VSTEffect::TrackingEventHandler);
+   InstallControlEventHandler(root,
+                              mTrackingHandlerUPP,
+                              GetEventTypeCount(trackingEventList),
+                              trackingEventList,
+                              this,
+                              &mRootTrackingHandlerRef);
+   InstallControlEventHandler(view,
+                              mTrackingHandlerUPP,
+                              GetEventTypeCount(trackingEventList),
+                              trackingEventList,
+                              this,
+                              &mViewTrackingHandlerRef);
+   InstallControlEventHandler(subview,
+                              mTrackingHandlerUPP,
+                              GetEventTypeCount(trackingEventList),
+                              trackingEventList,
+                              this,
+                              &mSubviewTrackingHandlerRef);
+   HIViewNewTrackingArea(root, NULL, 0, NULL);
+   HIViewNewTrackingArea(view, NULL, 0, NULL);
+   HIViewNewTrackingArea(subview, NULL, 0, NULL);
+
+#elif defined(__WXMSW__)
+
+   // Use a panel to host the plugins GUI
+   wxPanel *w = new wxPanel(mParent, wxID_ANY);
+   mHwnd = w->GetHWND();
+   callDispatcher(effEditOpen, 0, 0, mHwnd, 0.0);
+
+#else
+
+   // Use a panel to host the plugins GUI
+   wxPanel *w = new wxPanel(mParent, wxID_ANY);
+
+   // Make sure the parent has a window
+   if (!gtk_widget_get_realized(GTK_WIDGET(w->m_wxwindow)))
+   {
+      gtk_widget_realize(GTK_WIDGET(w->m_wxwindow));
+   }
+
+   GdkWindow *gwin = gtk_widget_get_window(GTK_WIDGET(w->m_wxwindow));
+   mXdisp = GDK_WINDOW_XDISPLAY(gwin);
+   mXwin = GDK_WINDOW_XID(gwin);
+
+   callDispatcher(effEditOpen, 0, (intptr_t)mXdisp, (void *)mXwin, 0.0);
+
+#endif
+
+   // Get the final bounds of the effect GUI
+   callDispatcher(effEditGetRect, 0, 0, &rect, 0.0);
+
+   // Build our display now
+   wxBoxSizer *vs = new wxBoxSizer(wxVERTICAL);
+   wxBoxSizer *hs = new wxBoxSizer(wxHORIZONTAL);
+
+#if defined(__WXMAC__)
+
+   // Reserve space for the effect GUI
+   mContainer = hs->Add(rect->right - rect->left, rect->bottom - rect->top);
+
+#elif defined(__WXMSW__)
+
+   // Add the effect host window to the layout
+   mContainer = hs->Add(w, 1, wxCENTER | wxEXPAND);
+   mContainer->SetMinSize(rect->right - rect->left, rect->bottom - rect->top);
+
+#else
+
+   // Add the effect host window to the layout
+   mContainer = hs->Add(w, 1, wxCENTER | wxEXPAND);
+   mContainer->SetMinSize(rect->right - rect->left, rect->bottom - rect->top);
+
+#endif
+
+   vs->Add(hs, 0, wxCENTER);
+
+   mParent->SetSizerAndFit(vs);
+
+#if defined(__WXMAC__)
+
+   // Found out where the reserved space wound up
+   wxPoint pos = mContainer->GetPosition();
+
+   // Reposition the subview into the reserved space
+   HIViewPlaceInSuperviewAt(subview, pos.x, pos.y);
+
+   // Some VST effects do not work unless the default handler is removed since
+   // it captures many of the events that the plugins need.  But, it must be
+   // done last since proper window sizing will not occur otherwise.
+   ::RemoveEventHandler((EventHandlerRef) mDialog->MacGetEventHandler());
+
+#elif defined(__WXMSW__)
+#else
+#endif
+
+   NeedEditIdle(true);
+}
+
+void VSTEffect::BuildPlain()
+{
+   mNames = new wxStaticText *[mAEffect->numParams];
+   mSliders = new wxSlider *[mAEffect->numParams];
+   mDisplays = new wxStaticText *[mAEffect->numParams];
+   mLabels = new wxStaticText *[mAEffect->numParams];
+
+   wxSizer *paramSizer = new wxStaticBoxSizer(wxVERTICAL, mParent, _("Effect Settings"));
+
+   wxFlexGridSizer *gridSizer = new wxFlexGridSizer(4, 0, 0);
+   gridSizer->AddGrowableCol(1);
+
+   // Add the duration control for generators
+   if (GetType() == EffectTypeGenerate)
+   {
+      wxControl *item = new wxStaticText(mParent, 0, _("Duration:"));
+      gridSizer->Add(item, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxALL, 5);
+      mDuration = new NumericTextCtrl(NumericConverter::TIME,
+                                     mParent,
+                                     ID_DURATION,
+                                     _("hh:mm:ss + milliseconds"),
+                                     mHost->GetDuration(),
+                                     mSampleRate,
+                                     wxDefaultPosition,
+                                     wxDefaultSize,
+                                     true);
+      mDuration->SetName(_("Duration"));
+      mDuration->EnableMenu();
+      gridSizer->Add(mDuration, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+      gridSizer->Add(1, 1, 0);
+      gridSizer->Add(1, 1, 0);
+   }
+
+   // Find the longest parameter name.
+   int namew = 0;
+   int w;
+   int h;
+   for (int i = 0; i < mAEffect->numParams; i++)
+   {
+      wxString text = GetString(effGetParamName, i);
+
+      if (text.Right(1) != wxT(':'))
+      {
+         text += wxT(':');
+      }
+
+      mParent->GetTextExtent(text, &w, &h);
+      if (w > namew)
+      {
+         namew = w;
+      }
+   }
+
+   mParent->GetTextExtent(wxT("HHHHHHHH"), &w, &h);
+
+   for (int i = 0; i < mAEffect->numParams; i++)
+   {
+      mNames[i] = new wxStaticText(mParent,
+                                   wxID_ANY,
+                                   wxEmptyString,
+                                   wxDefaultPosition,
+                                   wxSize(namew, -1),
+                                   wxALIGN_RIGHT | wxST_NO_AUTORESIZE);
+      gridSizer->Add(mNames[i], 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxALL, 5);
+
+      mSliders[i] = new wxSlider(mParent,
+                                 ID_SLIDERS + i,
+                                 0,
+                                 0,
+                                 1000,
+                                 wxDefaultPosition,
+                                 wxSize(200, -1));
+      gridSizer->Add(mSliders[i], 0, wxALIGN_CENTER_VERTICAL | wxEXPAND | wxALL, 5);
+
+      mDisplays[i] = new wxStaticText(mParent,
+                                      wxID_ANY,
+                                      wxEmptyString,
+                                      wxDefaultPosition,
+                                      wxSize(w, -1),
+                                      wxALIGN_RIGHT | wxST_NO_AUTORESIZE);
+      gridSizer->Add(mDisplays[i], 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxALL, 5);
+
+      mLabels[i] = new wxStaticText(mParent,
+                                    wxID_ANY,
+                                    wxEmptyString,
+                                    wxDefaultPosition,
+                                    wxSize(w, -1),
+                                    wxALIGN_LEFT | wxST_NO_AUTORESIZE);
+      gridSizer->Add(mLabels[i], 0, wxALIGN_CENTER_VERTICAL | wxALIGN_LEFT | wxALL, 5);
+   }
+
+   paramSizer->Add(gridSizer, 1, wxEXPAND | wxALL, 5);
+   mParent->SetSizer(paramSizer);
+
+   RefreshParameters();
+
+   mSliders[0]->SetFocus();
+}
+
+void VSTEffect::RefreshParameters(int skip)
+{
+   if (mGui)
+   {
+      return;
+   }
+
+   for (int i = 0; i < mAEffect->numParams; i++)
+   {
+      wxString text = GetString(effGetParamName, i);
+
+      text = text.Trim(true).Trim(false);
+
+      wxString name = text;
+
+      if (text.Right(1) != wxT(':'))
+      {
+         text += wxT(':');
+      }
+      mNames[i]->SetLabel(text);
+
+      // For some parameters types like on/off, setting the slider value has
+      // a side effect that causes it to only move when the parameter changes
+      // from off to on.  However, this prevents changing the value using the
+      // keyboard, so we skip the active slider if any.
+      if (i != skip)
+      {
+         mSliders[i]->SetValue(callGetParameter(i) * 1000);
+      }
+      name = text;
+
+      text = GetString(effGetParamDisplay, i);
+      if (text.IsEmpty())
+      {
+         text.Printf(wxT("%.5g"),callGetParameter(i));
+      }
+      mDisplays[i]->SetLabel(wxString::Format(wxT("%8s"), text.c_str()));
+      name += wxT(' ') + text;
+
+      text = GetString(effGetParamDisplay, i);
+      if (!text.IsEmpty())
+      {
+         text.Printf(wxT("%-8s"), GetString(effGetParamLabel, i).c_str());
+         mLabels[i]->SetLabel(wxString::Format(wxT("%8s"), text.c_str()));
+         name += wxT(' ') + text;
+      }
+
+      mSliders[i]->SetName(name);
+   }
+}
+
+void VSTEffect::OnSizeWindow(wxCommandEvent & evt)
+{
+   if (!mContainer)
+   {
+      return;
+   }
+
+   // This really needs some work.  We should know anything about the parent...
+   mContainer->SetMinSize(evt.GetInt(), (int) evt.GetExtraLong());
+   mParent->SetMinSize(mContainer->GetMinSize());
+   mDialog->Layout();
+   mDialog->Fit();
+}
+
+void VSTEffect::OnSlider(wxCommandEvent & evt)
+{
+   wxSlider *s = (wxSlider *) evt.GetEventObject();
+   int i = s->GetId() - ID_SLIDERS;
+
+   callSetParameter(i, s->GetValue() / 1000.0);
+
+   RefreshParameters(i);
+}
+
+bool VSTEffect::LoadFXB(const wxFileName & fn)
+{
+   bool ret = false;
+
+   // Try to open the file...will be closed automatically when method returns
+   wxFFile f(fn.GetFullPath(), wxT("rb"));
+   if (!f.IsOpened())
+   {
+      return false;
+   }
+
+   // Allocate memory for the contents
+   unsigned char *data = new unsigned char[f.Length()];
+   if (!data)
+   {
+      wxMessageBox(_("Unable to allocate memory when loading presets file."),
+                   _("Error Loading VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+      return false;
+   }
+   unsigned char *bptr = data;
+
+   do
+   {
+      // Read in the whole file
+      ssize_t len = f.Read((void *) bptr, f.Length());
+      if (f.Error())
+      {
+         wxMessageBox(_("Unable to read presets file."),
+                      _("Error Loading VST Presets"),
+                      wxOK | wxCENTRE,
+                      mParent);
+         break;
+      }
+
+      // Most references to the data are via an "int" array
+      int32_t *iptr = (int32_t *) bptr;
+
+      // Verify that we have at least enough for the header
+      if (len < 156)
+      {
+         break;
+      }
+
+      // Verify that we probably have an FX file
+      if (wxINT32_SWAP_ON_LE(iptr[0]) != CCONST('C', 'c', 'n', 'K'))
+      {
+         break;
+      }
+
+      // Ignore the size...sometimes it's there, other times it's zero
+
+      // Get the version and verify
+      int version = wxINT32_SWAP_ON_LE(iptr[3]);
+      if (version != 1 && version != 2)
+      {
+         break;
+      }
+
+      VstPatchChunkInfo info =
+      {
+         1,
+         wxINT32_SWAP_ON_LE(iptr[4]),
+         wxINT32_SWAP_ON_LE(iptr[5]),
+         wxINT32_SWAP_ON_LE(iptr[6])
+      };
+
+      // Ensure this program looks to belong to the current plugin
+      if ((info.pluginUniqueID != mAEffect->uniqueID) &&
+          (info.pluginVersion != mAEffect->version) &&
+          (info.numElements != mAEffect->numPrograms))
+      {
+         break;
+      }
+
+      // Get the number of programs
+      int numProgs = info.numElements;
+
+      // Get the current program index
+      int curProg = 0;
+      if (version >= 2)
+      {
+         curProg = wxINT32_SWAP_ON_LE(iptr[7]);
+         if (curProg < 0 || curProg >= numProgs)
+         {
+            break;
+         }
+      }
+
+      // Is it a bank of programs?
+      if (wxINT32_SWAP_ON_LE(iptr[2]) == CCONST('F', 'x', 'B', 'k'))
+      {
+         // Drop the header
+         bptr += 156;
+         len -= 156;
+
+         unsigned char *tempPtr = bptr;
+         ssize_t tempLen = len;
+
+         // Validate all of the programs
+         for (int i = 0; i < numProgs; i++)
+         {
+            if (!LoadFXProgram(&tempPtr, tempLen, i, true))
+            {
+               break;
+            }
+         }
+
+         // Ask the effect if this is an acceptable bank
+         if (callDispatcher(effBeginLoadBank, 0, 0, &info, 0.0) == -1)
+         {
+            return false;
+         }
+
+         // Start loading the individual programs
+         for (int i = 0; i < numProgs; i++)
+         {
+            ret = LoadFXProgram(&bptr, len, i, false);
+         }
+      }
+      // Or maybe a bank chunk?
+      else if (wxINT32_SWAP_ON_LE(iptr[2]) == CCONST('F', 'B', 'C', 'h'))
+      {
+         // Can't load programs chunks if the plugin doesn't support it
+         if (!(mAEffect->flags & effFlagsProgramChunks))
+         {
+            break;
+         }
+
+         // Verify that we have enough to grab the chunk size
+         if (len < 160)
+         {
+            break;
+         }
+
+         // Get the chunk size
+         int size = wxINT32_SWAP_ON_LE(iptr[39]);
+
+         // We finally know the full length of the program
+         int proglen = 160 + size;
+
+         // Verify that we have enough for the entire program
+         if (len < proglen)
+         {
+            break;
+         }
+
+         // Set the entire bank in one shot
+         callSetChunk(false, size, &iptr[40], &info);
+
+         // Success
+         ret = true;
+      }
+      // Unrecognizable type
+      else
+      {
+         break;
+      }
+
+      // Set the active program
+      if (ret && version >= 2)
+      {
+         callSetProgram(curProg);
+      }
+   } while (false);
+
+   // Get rid of the data
+   delete [] data;
+
+   return ret;
+}
+
+bool VSTEffect::LoadFXP(const wxFileName & fn)
+{
+   bool ret = false;
+
+   // Try to open the file...will be closed automatically when method returns
+   wxFFile f(fn.GetFullPath(), wxT("rb"));
+   if (!f.IsOpened())
+   {
+      return false;
+   }
+
+   // Allocate memory for the contents
+   unsigned char *data = new unsigned char[f.Length()];
+   if (!data)
+   {
+      wxMessageBox(_("Unable to allocate memory when loading presets file."),
+                   _("Error Loading VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+      return false;
+   }
+   unsigned char *bptr = data;
+
+   do
+   {
+      // Read in the whole file
+      ssize_t len = f.Read((void *) bptr, f.Length());
+      if (f.Error())
+      {
+         wxMessageBox(_("Unable to read presets file."),
+                      _("Error Loading VST Presets"),
+                      wxOK | wxCENTRE,
+                      mParent);
+         break;
+      }
+
+      // Get (or default) currently selected program
+      int i = 0; //mProgram->GetCurrentSelection();
+      if (i < 0)
+      {
+         i = 0;   // default to first program
+      }
+
+      // Go verify and set the program
+      ret = LoadFXProgram(&bptr, len, i, false);
+   } while (false);
+
+   // Get rid of the data
+   delete [] data;
+
+   return ret;
+}
+
+bool VSTEffect::LoadFXProgram(unsigned char **bptr, ssize_t & len, int index, bool dryrun)
+{
+   // Most references to the data are via an "int" array
+   int32_t *iptr = (int32_t *) *bptr;
+
+   // Verify that we have at least enough for a program without parameters
+   if (len < 28)
+   {
+      return false;
+   }
+
+   // Verify that we probably have an FX file
+   if (wxINT32_SWAP_ON_LE(iptr[0]) != CCONST('C', 'c', 'n', 'K'))
+   {
+      return false;
+   }
+
+   // Ignore the size...sometimes it's there, other times it's zero
+
+   // Get the version and verify
+#if defined(IS_THIS_AN_FXP_ARTIFICAL_LIMITATION)
+   int version = wxINT32_SWAP_ON_LE(iptr[3]);
+   if (version != 1)
+   {
+      return false;
+   }
+#endif
+
+   VstPatchChunkInfo info =
+   {
+      1,
+      wxINT32_SWAP_ON_LE(iptr[4]),
+      wxINT32_SWAP_ON_LE(iptr[5]),
+      wxINT32_SWAP_ON_LE(iptr[6])
+   };
+
+   // Ensure this program looks to belong to the current plugin
+   if ((info.pluginUniqueID != mAEffect->uniqueID) &&
+         (info.pluginVersion != mAEffect->version) &&
+         (info.numElements != mAEffect->numParams))
+   {
+      return false;
+   }
+
+   // Get the number of parameters
+   int numParams = info.numElements;
+
+   // At this point, we have to have enough to include the program name as well
+   if (len < 56)
+   {
+      return false;
+   }
+
+   // Get the program name
+   wxString progName(wxString::From8BitData((char *)&iptr[7]));
+
+   // Might be a regular program
+   if (wxINT32_SWAP_ON_LE(iptr[2]) == CCONST('F', 'x', 'C', 'k'))
+   {
+      // We finally know the full length of the program
+      int proglen = 56 + (numParams * sizeof(float));
+
+      // Verify that we have enough for all of the parameter values
+      if (len < proglen)
+      {
+         return false;
+      }
+
+      // Validate all of the parameter values
+      for (int i = 0; i < numParams; i++)
+      {
+         uint32_t ival = wxUINT32_SWAP_ON_LE(iptr[14 + i]);
+         float val = *((float *) &ival);
+         if (val < 0.0 || val > 1.0)
+         {
+            return false;
+         }
+      }
+         
+      // They look okay...time to start changing things
+      if (!dryrun)
+      {
+         // Ask the effect if this is an acceptable program
+         if (callDispatcher(effBeginLoadProgram, 0, 0, &info, 0.0) == -1)
+         {
+            return false;
+         }
+
+         // Load all of the parameters
+         callDispatcher(effBeginSetProgram, 0, 0, NULL, 0.0);
+         for (int i = 0; i < numParams; i++)
+         {
+            wxUint32 val = wxUINT32_SWAP_ON_LE(iptr[14 + i]);
+            callSetParameter(i, *((float *) &val));
+         }
+         callDispatcher(effEndSetProgram, 0, 0, NULL, 0.0);
+      }
+
+      // Update in case we're loading an "FxBk" format bank file
+      *bptr += proglen;
+      len -= proglen;
+   }
+   // Maybe we have a program chunk
+   else if (wxINT32_SWAP_ON_LE(iptr[2]) == CCONST('F', 'P', 'C', 'h'))
+   {
+      // Can't load programs chunks if the plugin doesn't support it
+      if (!(mAEffect->flags & effFlagsProgramChunks))
+      {
+         return false;
+      }
+
+      // Verify that we have enough to grab the chunk size
+      if (len < 60)
+      {
+         return false;
+      }
+
+      // Get the chunk size
+      int size = wxINT32_SWAP_ON_LE(iptr[14]);
+
+      // We finally know the full length of the program
+      int proglen = 60 + size;
+
+      // Verify that we have enough for the entire program
+      if (len < proglen)
+      {
+         return false;
+      }
+
+      // Set the entire program in one shot
+      if (!dryrun)
+      {
+         callSetChunk(true, size, &iptr[15], &info);
+      }
+
+      // Update in case we're loading an "FxBk" format bank file
+      *bptr += proglen;
+      len -= proglen;
+   }
+   else
+   {
+      // Unknown type
+      return false;
+   }
+   
+   if (!dryrun)
+   {
+      SetString(effSetProgramName, wxString(progName), index);
+   }
+
+   return true;
+}
+
+bool VSTEffect::LoadXML(const wxFileName & fn)
+{
+   mInChunk = false;
+   mInSet = false;
+
+   // default to read as XML file
+   // Load the program
+   XMLFileReader reader;
+   bool ok = reader.Parse(this, fn.GetFullPath());
+
+   // Something went wrong with the file, clean up
+   if (mInSet)
+   {
+      callDispatcher(effEndSetProgram, 0, 0, NULL, 0.0);
+
+      mInSet = false;
+   }
+
+   if (!ok)
+   {
+      // Inform user of load failure
+      wxMessageBox(reader.GetErrorStr(),
+                   _("Error Loading VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+      return false;
+   }
+
+   return true;
+}
+
+void VSTEffect::SaveFXB(const wxFileName & fn)
+{
+   // Create/Open the file
+   wxFFile f(fn.GetFullPath(), wxT("wb"));
+   if (!f.IsOpened())
+   {
+      wxMessageBox(wxString::Format(_("Could not open file: \"%s\""), fn.GetFullPath().c_str()),
+                   _("Error Saving VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+      return;
+   }
+
+   wxMemoryBuffer buf;
+   wxInt32 subType;
+   void *chunkPtr;
+   int chunkSize;
+   int dataSize = 148;
+   wxInt32 tab[8];
+   int curProg = 0 ; //mProgram->GetCurrentSelection();
+
+   if (mAEffect->flags & effFlagsProgramChunks)
+   {
+      subType = CCONST('F', 'B', 'C', 'h');
+
+      chunkSize = callDispatcher(effGetChunk, 0, 0, &chunkPtr, 0.0);
+      dataSize += 4 + chunkSize;
+   }
+   else
+   {
+      subType = CCONST('F', 'x', 'B', 'k');
+
+      for (int i = 0; i < mAEffect->numPrograms; i++)
+      {
+         SaveFXProgram(buf, i);
+      }
+
+      dataSize += buf.GetDataLen();
+   }
+
+   tab[0] = wxINT32_SWAP_ON_LE(CCONST('C', 'c', 'n', 'K'));
+   tab[1] = wxINT32_SWAP_ON_LE(dataSize);
+   tab[2] = wxINT32_SWAP_ON_LE(subType);
+   tab[3] = wxINT32_SWAP_ON_LE(curProg >= 0 ? 2 : 1);
+   tab[4] = wxINT32_SWAP_ON_LE(mAEffect->uniqueID);
+   tab[5] = wxINT32_SWAP_ON_LE(mAEffect->version);
+   tab[6] = wxINT32_SWAP_ON_LE(mAEffect->numPrograms);
+   tab[7] = wxINT32_SWAP_ON_LE(curProg >= 0 ? curProg : 0);
+
+   f.Write(tab, sizeof(tab));
+   if (!f.Error())
+   {
+      char padding[124];
+      memset(padding, 0, sizeof(padding));
+      f.Write(padding, sizeof(padding));
+
+      if (!f.Error())
+      {
+         if (mAEffect->flags & effFlagsProgramChunks)
+         {
+            wxInt32 size = wxINT32_SWAP_ON_LE(chunkSize);
+            f.Write(&size, sizeof(size));
+            f.Write(chunkPtr, chunkSize);
+         }
+         else
+         {
+            f.Write(buf.GetData(), buf.GetDataLen());
+         }
+      }
+   }
+
+   if (f.Error())
+   {
+      wxMessageBox(wxString::Format(_("Error writing to file: \"%s\""), fn.GetFullPath().c_str()),
+                   _("Error Saving VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+   }
+
+   f.Close();
+
+   return;
+}
+
+void VSTEffect::SaveFXP(const wxFileName & fn)
+{
+   // Create/Open the file
+   wxFFile f(fn.GetFullPath(), wxT("wb"));
+   if (!f.IsOpened())
+   {
+      wxMessageBox(wxString::Format(_("Could not open file: \"%s\""), fn.GetFullPath().c_str()),
+                   _("Error Saving VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+      return;
+   }
+
+   wxMemoryBuffer buf;
+
+   int ndx = callDispatcher(effGetProgram, 0, 0, NULL, 0.0);
+   SaveFXProgram(buf, ndx);
+
+   f.Write(buf.GetData(), buf.GetDataLen());
+   if (f.Error())
+   {
+      wxMessageBox(wxString::Format(_("Error writing to file: \"%s\""), fn.GetFullPath().c_str()),
+                   _("Error Saving VST Presets"),
+                   wxOK | wxCENTRE,
+                   mParent);
+   }
+
+   f.Close();
+
+   return;
+}
+
+void VSTEffect::SaveFXProgram(wxMemoryBuffer & buf, int index)
+{
+   wxInt32 subType;
+   void *chunkPtr;
+   int chunkSize;
+   int dataSize = 48;
+   char progName[28];
+   wxInt32 tab[7];
+
+   callDispatcher(effGetProgramNameIndexed, index, 0, &progName, 0.0);
+   progName[27] = '\0';
+   chunkSize = strlen(progName);
+   memset(&progName[chunkSize], 0, sizeof(progName) - chunkSize);
+
+   if (mAEffect->flags & effFlagsProgramChunks)
+   {
+      subType = CCONST('F', 'P', 'C', 'h');
+
+      chunkSize = callDispatcher(effGetChunk, 1, 0, &chunkPtr, 0.0);
+      dataSize += 4 + chunkSize;
+   }
+   else
+   {
+      subType = CCONST('F', 'x', 'C', 'k');
+
+      dataSize += (mAEffect->numParams << 2);
+   }
+
+   tab[0] = wxINT32_SWAP_ON_LE(CCONST('C', 'c', 'n', 'K'));
+   tab[1] = wxINT32_SWAP_ON_LE(dataSize);
+   tab[2] = wxINT32_SWAP_ON_LE(subType);
+   tab[3] = wxINT32_SWAP_ON_LE(1);
+   tab[4] = wxINT32_SWAP_ON_LE(mAEffect->uniqueID);
+   tab[5] = wxINT32_SWAP_ON_LE(mAEffect->version);
+   tab[6] = wxINT32_SWAP_ON_LE(mAEffect->numParams);
+
+   buf.AppendData(tab, sizeof(tab));
+   buf.AppendData(progName, sizeof(progName));
+
+   if (mAEffect->flags & effFlagsProgramChunks)
+   {
+      wxInt32 size = wxINT32_SWAP_ON_LE(chunkSize);
+      buf.AppendData(&size, sizeof(size));
+      buf.AppendData(chunkPtr, chunkSize);
+   }
+   else
+   {
+      for (int i = 0; i < mAEffect->numParams; i++)
+      {
+         float val = callGetParameter(i);
+         wxUint32 ival = wxUINT32_SWAP_ON_LE(*((wxUint32 *) &val));
+         buf.AppendData(&ival, sizeof(ival));
+      }
+   }
+
+   return;
+}
+
+void VSTEffect::SaveXML(const wxFileName & fn)
+{
+   XMLFileWriter xmlFile;
+
+   // Create/Open the file
+   xmlFile.Open(fn.GetFullPath(), wxT("wb"));
+
+   xmlFile.StartTag(wxT("vstprogrampersistence"));
+   xmlFile.WriteAttr(wxT("version"), wxT("2"));
+
+   xmlFile.StartTag(wxT("effect"));
+   xmlFile.WriteAttr(wxT("name"), GetName());
+   xmlFile.WriteAttr(wxT("uniqueID"), mAEffect->uniqueID);
+   xmlFile.WriteAttr(wxT("version"), mAEffect->version);
+   xmlFile.WriteAttr(wxT("numParams"), mAEffect->numParams);
+
+   xmlFile.StartTag(wxT("program"));
+   xmlFile.WriteAttr(wxT("name"), wxEmptyString); //mProgram->GetValue());
+
+   int clen = 0;
+   if (mAEffect->flags & effFlagsProgramChunks)
+   {
+      void *chunk = NULL;
+
+      clen = (int) callDispatcher(effGetChunk, 1, 0, &chunk, 0.0);
+      if (clen != 0)
+      {
+         xmlFile.StartTag(wxT("chunk"));
+         xmlFile.WriteSubTree(VSTEffect::b64encode(chunk, clen) + wxT('\n'));
+         xmlFile.EndTag(wxT("chunk"));
+      }
+   }
+
+   if (clen == 0)
+   {
+      for (int i = 0; i < mAEffect->numParams; i++)
+      {
+         xmlFile.StartTag(wxT("param"));
+
+         xmlFile.WriteAttr(wxT("index"), i);
+         xmlFile.WriteAttr(wxT("name"),
+                           GetString(effGetParamName, i));
+         xmlFile.WriteAttr(wxT("value"),
+                           wxString::Format(wxT("%f"),
+                           callGetParameter(i)));
+
+         xmlFile.EndTag(wxT("param"));
+      }
+   }
+
+   xmlFile.EndTag(wxT("program"));
+
+   xmlFile.EndTag(wxT("effect"));
+
+   xmlFile.EndTag(wxT("vstprogrampersistence"));
+
+   // Close the file
+   xmlFile.Close();
+
+   return;
+}
+
+bool VSTEffect::HandleXMLTag(const wxChar *tag, const wxChar **attrs)
+{
+   if (wxStrcmp(tag, wxT("vstprogrampersistence")) == 0)
+   {
+      while (*attrs)
+      {
+         const wxChar *attr = *attrs++;
+         const wxChar *value = *attrs++;
+
+         if (!value)
+         {
+            break;
+         }
+
+         const wxString strValue = value;
+
+         if (wxStrcmp(attr, wxT("version")) == 0)
+         {
+            if (!XMLValueChecker::IsGoodInt(strValue) || !strValue.ToLong(&mXMLVersion))
+            {
+               return false;
+            }
+
+            if (mXMLVersion < 1 || mXMLVersion > 2)
+            {
+               return false;
+            }
+         }
+         else
+         {
+            return false;
+         }
+      }
+
+      return true;
+   }
+
+   if (wxStrcmp(tag, wxT("effect")) == 0)
+   {
+      memset(&mXMLInfo, 0, sizeof(mXMLInfo));
+      mXMLInfo.version = 1;
+      mXMLInfo.pluginUniqueID = mAEffect->uniqueID;
+      mXMLInfo.pluginVersion = mAEffect->version;
+      mXMLInfo.numElements = mAEffect->numParams;
+
+      while (*attrs)
+      {
+         const wxChar *attr = *attrs++;
+         const wxChar *value = *attrs++;
+
+         if (!value)
+         {
+            break;
+         }
+
+         const wxString strValue = value;
+
+         if (wxStrcmp(attr, wxT("name")) == 0)
+         {
+            if (!XMLValueChecker::IsGoodString(strValue))
+            {
+               return false;
+            }
+
+            if (value != GetName())
+            {
+               wxString msg;
+               msg.Printf(_("This parameter file was saved from %s.  Continue?"), value);
+               int result = wxMessageBox(msg, wxT("Confirm"), wxYES_NO, mParent);
+               if (result == wxNO)
+               {
+                  return false;
+               }
+            }
+         }
+         else if (wxStrcmp(attr, wxT("version")) == 0)
+         {
+            long version;
+            if (!XMLValueChecker::IsGoodInt(strValue) || !strValue.ToLong(&version))
+            {
+               return false;
+            }
+
+            mXMLInfo.pluginVersion = (int) version;
+         }
+         else if (mXMLVersion > 1 && wxStrcmp(attr, wxT("uniqueID")) == 0)
+         {
+            long uniqueID;
+            if (!XMLValueChecker::IsGoodInt(strValue) || !strValue.ToLong(&uniqueID))
+            {
+               return false;
+            }
+
+            mXMLInfo.pluginUniqueID = (int) uniqueID;
+         }
+         else if (mXMLVersion > 1 && wxStrcmp(attr, wxT("numParams")) == 0)
+         {
+            long numParams;
+            if (!XMLValueChecker::IsGoodInt(strValue) || !strValue.ToLong(&numParams))
+            {
+               return false;
+            }
+
+            mXMLInfo.numElements = (int) numParams;
+         }
+         else
+         {
+            return false;
+         }
+      }
+
+      return true;
+   }
+
+   if (wxStrcmp(tag, wxT("program")) == 0)
+   {
+      while (*attrs)
+      {
+         const wxChar *attr = *attrs++;
+         const wxChar *value = *attrs++;
+
+         if (!value)
+         {
+            break;
+         }
+
+         const wxString strValue = value;
+
+         if (wxStrcmp(attr, wxT("name")) == 0)
+         {
+            if (!XMLValueChecker::IsGoodString(strValue))
+            {
+               return false;
+            }
+
+            if (strValue.length() > 24)
+            {
+               return false;
+            }
+
+            int ndx = 0; //mProgram->GetCurrentSelection();
+            if (ndx == wxNOT_FOUND)
+            {
+               ndx = 0;
+            }
+
+            SetString(effSetProgramName, strValue, ndx);
+         }
+         else
+         {
+            return false;
+         }
+      }
+
+      mInChunk = false;
+
+      if (callDispatcher(effBeginLoadProgram, 0, 0, &mXMLInfo, 0.0) == -1)
+      {
+         return false;
+      }
+
+      callDispatcher(effBeginSetProgram, 0, 0, NULL, 0.0);
+
+      mInSet = true;
+
+      return true;
+   }
+
+   if (wxStrcmp(tag, wxT("param")) == 0)
+   {
+      long ndx = -1;
+      double val = -1.0;
+      while (*attrs)
+      {
+         const wxChar *attr = *attrs++;
+         const wxChar *value = *attrs++;
+
+         if (!value)
+         {
+            break;
+         }
+
+         const wxString strValue = value;
+
+         if (wxStrcmp(attr, wxT("index")) == 0)
+         {
+            if (!XMLValueChecker::IsGoodInt(strValue) || !strValue.ToLong(&ndx))
+            {
+               return false;
+            }
+
+            if (ndx < 0 || ndx >= mAEffect->numParams)
+            {
+               // Could be a different version of the effect...probably should
+               // tell the user
+               return false;
+            }
+         }
+         else if (wxStrcmp(attr, wxT("name")) == 0)
+         {
+            if (!XMLValueChecker::IsGoodString(strValue))
+            {
+               return false;
+            }
+            // Nothing to do with it for now
+         }
+         else if (wxStrcmp(attr, wxT("value")) == 0)
+         {
+            if (!XMLValueChecker::IsGoodInt(strValue) ||
+               !Internat::CompatibleToDouble(strValue, &val))
+            {
+               return false;
+            }
+
+            if (val < 0.0 || val > 1.0)
+            {
+               return false;
+            }
+         }
+      }
+
+      if (ndx == -1 || val == -1.0)
+      {
+         return false;
+      }
+
+      callSetParameter(ndx, val);
+
+      return true;
+   }
+
+   if (wxStrcmp(tag, wxT("chunk")) == 0)
+   {
+      mInChunk = true;
+      return true;
+   }
+
+   return false;
+}
+
+void VSTEffect::HandleXMLEndTag(const wxChar *tag)
+{
+   if (wxStrcmp(tag, wxT("chunk")) == 0)
+   {
+      if (mChunk.length())
+      {
+         char *buf = new char[mChunk.length() / 4 * 3];
+
+         int len = VSTEffect::b64decode(mChunk, buf);
+         if (len)
+         {
+            callSetChunk(true, len, buf, &mXMLInfo);
+         }
+
+         delete [] buf;
+         mChunk.clear();
+      }
+      mInChunk = false;
+   }
+
+   if (wxStrcmp(tag, wxT("program")) == 0)
+   {
+      if (mInSet)
+      {
+         callDispatcher(effEndSetProgram, 0, 0, NULL, 0.0);
+
+         mInSet = false;
+      }
+   }
+}
+
+void VSTEffect::HandleXMLContent(const wxString & content)
+{
+   if (mInChunk)
+   {
+      mChunk += wxString(content).Trim(true).Trim(false);
+   }
+}
+
+XMLTagHandler *VSTEffect::HandleXMLChild(const wxChar *tag)
+{
+   if (wxStrcmp(tag, wxT("vstprogrampersistence")) == 0)
+   {
+      return this;
+   }
+
+   if (wxStrcmp(tag, wxT("effect")) == 0)
+   {
+      return this;
+   }
+
+   if (wxStrcmp(tag, wxT("program")) == 0)
+   {
+      return this;
+   }
+
+   if (wxStrcmp(tag, wxT("param")) == 0)
+   {
+      return this;
+   }
+
+   if (wxStrcmp(tag, wxT("chunk")) == 0)
+   {
+      return this;
+   }
+
+   return NULL;
 }
 
 #endif // USE_VST

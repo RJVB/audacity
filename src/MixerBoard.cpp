@@ -17,9 +17,11 @@
 
 #include <wx/dcmemory.h>
 #include <wx/arrimpl.cpp>
+#include <wx/icon.h>
 #include <wx/settings.h> // for wxSystemSettings::GetColour and wxSystemSettings::GetMetric
 
 #include "AColor.h"
+#include "AudioIO.h"
 #include "MixerBoard.h"
 #ifdef EXPERIMENTAL_MIDI_OUT
    #include "NoteTrack.h"
@@ -276,6 +278,7 @@ MixerTrackCluster::MixerTrackCluster(wxWindow* parent,
                   true); // toggle button
    mToggleButton_Mute->SetName(_("Mute"));
    mToggleButton_Mute->SetAlternateImages(
+      1,
       *(mMixerBoard->mImageMuteUp), *(mMixerBoard->mImageMuteOver),
       *(mMixerBoard->mImageMuteDown), *(mMixerBoard->mImageMuteDisabled));
    this->UpdateMute();
@@ -305,7 +308,8 @@ MixerTrackCluster::MixerTrackCluster(wxWindow* parent,
    if (mLeftTrack) {
 #endif
    mMeter =
-      new Meter(this, -1, // wxWindow* parent, wxWindowID id,
+      new Meter(GetActiveProject(), // AudacityProject* project,
+                this, -1, // wxWindow* parent, wxWindowID id,
                 false, // bool isInput
                 ctrlPos, ctrlSize, // const wxPoint& pos = wxDefaultPosition, const wxSize& size = wxDefaultSize,
                 Meter::MixerTrackCluster); // Style style = HorizontalStereo,
@@ -331,8 +335,14 @@ MixerTrackCluster::MixerTrackCluster(wxWindow* parent,
    #endif // wxUSE_TOOLTIPS
 
    #ifdef __WXMAC__
+#if wxCHECK_VERSION(3, 0, 0)
+      wxSizeEvent event(GetSize(), GetId());
+      event.SetEventObject(this);
+      GetEventHandler()->ProcessEvent(event);
+#else
       wxSizeEvent dummyEvent;
       this->OnSize(dummyEvent);
+#endif
       UpdateGain();
    #endif
 }
@@ -458,10 +468,10 @@ void MixerTrackCluster::UpdateName()
 void MixerTrackCluster::UpdateMute()
 {
 #ifdef EXPERIMENTAL_MIDI_OUT
-   mToggleButton_Mute->SetAlternate(mTrack->GetSolo());
+   mToggleButton_Mute->SetAlternateIdx(mTrack->GetSolo() ? 1 : 0);
    if (mTrack->GetMute())
 #else
-   mToggleButton_Mute->SetAlternate(mLeftTrack->GetSolo());
+   mToggleButton_Mute->SetAlternateIdx(mLeftTrack->GetSolo() ? 1 : 0);
    if (mLeftTrack->GetMute())
 #endif
       mToggleButton_Mute->PushDown();
@@ -480,7 +490,7 @@ void MixerTrackCluster::UpdateSolo()
       mToggleButton_Solo->PushDown();
    else
       mToggleButton_Solo->PopUp();
-   mToggleButton_Mute->SetAlternate(bIsSolo);
+   mToggleButton_Mute->SetAlternateIdx(bIsSolo ? 1 : 0);
 }
 
 void MixerTrackCluster::UpdatePan()
@@ -681,11 +691,7 @@ void MixerTrackCluster::UpdateMeter(const double t0, const double t1)
 
 wxColour MixerTrackCluster::GetTrackColor()
 {
-   //#if (AUDACITY_BRANDING == BRAND_UMIXIT)
-   //   return AColor::GetTrackColor((void*)mLeftTrack);
-   //#else
-      return wxColour(102, 255, 102); // same as Meter playback color
-   //#endif
+   return wxColour(102, 255, 102); // same as Meter playback color
 }
 
 
@@ -730,11 +736,11 @@ void MixerTrackCluster::HandleSelect(const bool bShiftDown)
       {
          // No range previously selected, so use the range of this track.
 #ifdef EXPERIMENTAL_MIDI_OUT
-         mProject->mViewInfo.sel0 = mTrack->GetOffset();
-         mProject->mViewInfo.sel1 = mTrack->GetEndTime();
+         mProject->mViewInfo.selectedRegion.setTimes(
+            mTrack->GetOffset(), mTrack->GetEndTime());
 #else
-         mProject->mViewInfo.sel0 = mLeftTrack->GetOffset();
-         mProject->mViewInfo.sel1 = mLeftTrack->GetEndTime();
+         mProject->mViewInfo.selectedRegion.setTimes(
+            mLeftTrack->GetOffset(), mLeftTrack->GetEndTime());
 #endif
       }
 
@@ -824,10 +830,10 @@ void MixerTrackCluster::OnButton_Mute(wxCommandEvent& WXUNUSED(event))
 {
 #ifdef EXPERIMENTAL_MIDI_OUT
    mProject->HandleTrackMute(mTrack, mToggleButton_Mute->WasShiftDown());
-   mToggleButton_Mute->SetAlternate(mTrack->GetSolo());
+   mToggleButton_Mute->SetAlternateIdx(mTrack->GetSolo() ? 1 : 0);
 #else
    mProject->HandleTrackMute(mLeftTrack, mToggleButton_Mute->WasShiftDown());
-   mToggleButton_Mute->SetAlternate(mLeftTrack->GetSolo());
+   mToggleButton_Mute->SetAlternateIdx(mLeftTrack->GetSolo() ? 1 : 0);
 #endif
 
    // Update the TrackPanel correspondingly.
@@ -855,7 +861,7 @@ void MixerTrackCluster::OnButton_Solo(wxCommandEvent& WXUNUSED(event))
    mProject->HandleTrackSolo(mLeftTrack, mToggleButton_Solo->WasShiftDown());
    bool bIsSolo = mLeftTrack->GetSolo();
 #endif
-   mToggleButton_Mute->SetAlternate(bIsSolo);
+   mToggleButton_Mute->SetAlternateIdx(bIsSolo ? 1 : 0);
 
    // Update the TrackPanel correspondingly.
    if (mProject->IsSoloSimple())
@@ -1213,7 +1219,7 @@ void MixerBoard::RemoveTrackCluster(const WaveTrack* pTrack)
 
 
 #ifdef EXPERIMENTAL_MIDI_OUT
-wxBitmap* MixerBoard::GetMusicalInstrumentBitmap(const wxString name)
+wxBitmap* MixerBoard::GetMusicalInstrumentBitmap(wxString name)
 #else
 wxBitmap* MixerBoard::GetMusicalInstrumentBitmap(const WaveTrack* pLeftTrack)
 #endif
@@ -1722,12 +1728,14 @@ MixerBoardFrame::MixerBoardFrame(AudacityProject* parent)
 
    // loads either the XPM or the windows resource, depending on the platform
    #if !defined(__WXMAC__) && !defined(__WXX11__)
+      wxIcon *ic;
       #ifdef __WXMSW__
-         wxIcon ic(wxICON(AudacityLogo));
+         ic = new wxIcon(wxICON(AudacityLogo));
       #else
-         wxIcon ic(wxICON(AudacityLogo48x48));
+         ic = new wxIcon(wxICON(AudacityLogo48x48));
       #endif
-      SetIcon(ic);
+      SetIcon(*ic);
+      delete ic;
    #endif
 }
 

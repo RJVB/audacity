@@ -23,9 +23,10 @@
 
 #include "../ShuttleGui.h"
 #include "../WaveTrack.h"
-#include "../widgets/TimeTextCtrl.h"
 
 #include "Generator.h"
+
+class NumericTextCtrl;
 
 #define __UNINITIALIZED__ (-1)
 
@@ -37,7 +38,7 @@ class EffectDtmf : public Generator {
    }
 
    virtual wxString GetEffectName() {
-      return wxString(_("DTMF Tones..."));
+      return wxString(wxTRANSLATE("DTMF Tones..."));
    }
 
    virtual std::set<wxString> GetEffectCategories() {
@@ -47,7 +48,12 @@ class EffectDtmf : public Generator {
    }
 
    virtual wxString GetEffectIdentifier() {
-      return wxString(wxT("DTMFTone"));
+      return wxString(wxT("DTMF Tones"));
+   }
+
+   // Return true if the effect supports processing via batch chains.
+   virtual bool SupportsChains() {
+      return false;
    }
 
    virtual wxString GetEffectDescription() {
@@ -112,7 +118,7 @@ class DtmfDialog:public EffectDialog {
    EffectDtmf *mEffect;
    wxSlider   *mDtmfDutyS;
    wxTextCtrl *mDtmfStringT;
-   TimeTextCtrl *mDtmfDurationT;
+   NumericTextCtrl *mDtmfDurationT;
    wxStaticText *mDtmfToneT;
    wxStaticText *mDtmfSilenceT;
    wxStaticText *mDtmfDutyT;

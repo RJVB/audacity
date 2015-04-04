@@ -14,20 +14,29 @@
 
 #include <set>
 
+#include <wx/bmpbuttn.h>
 #include <wx/dynarray.h>
 #include <wx/intl.h>
 #include <wx/string.h>
+#include <wx/tglbtn.h>
 
 class wxDialog;
 class wxWindow;
 
+#include "audacity/ConfigInterface.h"
+#include "audacity/EffectInterface.h"
+
+#include "../Experimental.h"
 #include "../WaveTrack.h"
+#include "../SelectedRegion.h"
 #include "../Shuttle.h"
 #include "../ShuttleGui.h"
 #include "../Internat.h"
 #include "../widgets/ProgressDialog.h"
 
+class SelectedRegion;
 class TimeWarper;
+class EffectUIHost;
 
 #define PLUGIN_EFFECT   0x0001
 #define BUILTIN_EFFECT  0x0002
@@ -57,7 +66,8 @@ class TimeWarper;
 //and so can just drop the steps we don't want?
 #define SKIP_EFFECT_MILLISECOND 99999
 
-class AUDACITY_DLL_API Effect {
+class AUDACITY_DLL_API Effect : public EffectHostInterface
+{
  //
  // public methods
  //
@@ -65,10 +75,95 @@ class AUDACITY_DLL_API Effect {
  // apply the effect to one or more tracks.
  //
  public:
+   // The constructor is called once by each subclass at the beginning of the program.
+   // Avoid allocating memory or doing time-consuming processing here.
+   Effect();
+   virtual ~Effect();
+
+   // IdentInterface implementation
+
+   virtual wxString GetPath();
+   virtual wxString GetSymbol();
+   virtual wxString GetName();
+   virtual wxString GetVendor();
+   virtual wxString GetVersion();
+   virtual wxString GetDescription();
+
+   // EffectIdentInterface implementation
+
+   virtual EffectType GetType();
+   virtual wxString GetFamily();
+   virtual bool IsInteractive();
+   virtual bool IsDefault();
+   virtual bool IsLegacy();
+   virtual bool SupportsRealtime();
+   virtual bool SupportsAutomation();
+
+   // EffectHostInterface implementation
+
+   virtual double GetDuration();
+   virtual bool SetDuration(double duration);
+
+   virtual bool Apply();
+   virtual void Preview();
+
+   virtual wxDialog *CreateUI(wxWindow *parent, EffectUIClientInterface *client);
+
+   virtual wxString GetUserPresetsGroup(const wxString & name);
+   virtual wxString GetCurrentSettingsGroup();
+   virtual wxString GetFactoryDefaultsGroup();
+
+   // ConfigClientInterface implementation
+
+   virtual bool GetSharedConfigSubgroups(const wxString & group, wxArrayString & subgroups);
+
+   virtual bool GetSharedConfig(const wxString & group, const wxString & key, wxString & value, const wxString & defval = wxEmptyString);
+   virtual bool GetSharedConfig(const wxString & group, const wxString & key, int & value, int defval = 0);
+   virtual bool GetSharedConfig(const wxString & group, const wxString & key, bool & value, bool defval = false);
+   virtual bool GetSharedConfig(const wxString & group, const wxString & key, float & value, float defval = 0.0);
+   virtual bool GetSharedConfig(const wxString & group, const wxString & key, double & value, double defval = 0.0);
+   virtual bool GetSharedConfig(const wxString & group, const wxString & key, sampleCount & value, sampleCount defval = 0);
+
+   virtual bool SetSharedConfig(const wxString & group, const wxString & key, const wxString & value);
+   virtual bool SetSharedConfig(const wxString & group, const wxString & key, const int & value);
+   virtual bool SetSharedConfig(const wxString & group, const wxString & key, const bool & value);
+   virtual bool SetSharedConfig(const wxString & group, const wxString & key, const float & value);
+   virtual bool SetSharedConfig(const wxString & group, const wxString & key, const double & value);
+   virtual bool SetSharedConfig(const wxString & group, const wxString & key, const sampleCount & value);
+
+   virtual bool RemoveSharedConfigSubgroup(const wxString & group);
+   virtual bool RemoveSharedConfig(const wxString & group, const wxString & key);
+
+   virtual bool GetPrivateConfigSubgroups(const wxString & group, wxArrayString & subgroups);
+
+   virtual bool GetPrivateConfig(const wxString & group, const wxString & key, wxString & value, const wxString & defval = wxEmptyString);
+   virtual bool GetPrivateConfig(const wxString & group, const wxString & key, int & value, int defval = 0);
+   virtual bool GetPrivateConfig(const wxString & group, const wxString & key, bool & value, bool defval = false);
+   virtual bool GetPrivateConfig(const wxString & group, const wxString & key, float & value, float defval = 0.0);
+   virtual bool GetPrivateConfig(const wxString & group, const wxString & key, double & value, double defval = 0.0);
+   virtual bool GetPrivateConfig(const wxString & group, const wxString & key, sampleCount & value, sampleCount defval = 0);
+
+   virtual bool SetPrivateConfig(const wxString & group, const wxString & key, const wxString & value);
+   virtual bool SetPrivateConfig(const wxString & group, const wxString & key, const int & value);
+   virtual bool SetPrivateConfig(const wxString & group, const wxString & key, const bool & value);
+   virtual bool SetPrivateConfig(const wxString & group, const wxString & key, const float & value);
+   virtual bool SetPrivateConfig(const wxString & group, const wxString & key, const double & value);
+   virtual bool SetPrivateConfig(const wxString & group, const wxString & key, const sampleCount & value);
+
+   virtual bool RemovePrivateConfigSubgroup(const wxString & group);
+   virtual bool RemovePrivateConfig(const wxString & group, const wxString & key);
+
+   // Effect implementation
+
+   virtual PluginID GetID();
+   virtual bool Startup(EffectClientInterface *client);
+   virtual bool GetAutomationParameters(wxString & parms);
+   virtual bool SetAutomationParameters(const wxString & parms);
+
    // Each subclass of Effect should override this method.
    // This name will go in the menu bar;
    // append "..." if your effect pops up a dialog
-   virtual wxString GetEffectName() = 0;
+   virtual wxString GetEffectName();
 
    // Each subclass of Effect should override this method.
    // This should return the category of this effect, which
@@ -80,7 +175,7 @@ class AUDACITY_DLL_API Effect {
    // Previously optional. Now required to identify effects for Chain support.
    // Each subclass of Effect should override this method.
    // This should be human-readable, but should NOT be translated.  Use wxT(""), not _("").
-   virtual wxString GetEffectIdentifier() = 0;
+   virtual wxString GetEffectIdentifier();
 
    // Each subclass of Effect should override this method.
    // This name will go in the progress dialog, but can be used
@@ -88,7 +183,7 @@ class AUDACITY_DLL_API Effect {
    // For example, if the effect is "Filter", the action is
    // "Filtering", or if the effect is "Bass Boost", the action
    // is "Boosting Bass Frequencies".
-   virtual wxString GetEffectAction() = 0;
+   virtual wxString GetEffectAction();
 
    // Each subclass of Effect should override this method.
    // This description will go in the History state.
@@ -114,9 +209,20 @@ class AUDACITY_DLL_API Effect {
       return (mFlags & BUILTIN_EFFECT) != 0;
    }
 
+   // Preview normally requires a selection, but INSERT_EFFECTs do not.
+   // Return true to override the need for a selection.
+   virtual bool GeneratorPreview(){
+      return false;
+   }
+
    // Called to set or retrieve parameter values.  Return true if successful.
    virtual bool TransferParameters( Shuttle & WXUNUSED(shuttle) ) {
       return true;
+   }
+
+   void SetPresetParameters( const wxArrayString * Names, const wxArrayString * Values ){
+      if( Names ) mPresetNames = *Names;
+      if( Values ) mPresetValues = *Values;
    }
 
    void SetEffectFlags( int NewFlags )
@@ -126,7 +232,7 @@ class AUDACITY_DLL_API Effect {
 
    // The Effect class fully implements the Preview method for you.
    // Only override it if you need to do preprocessing or cleanup.
-   virtual void Preview(bool dryOnly = false);
+   virtual void Preview(bool dryOnly);
 
    // Most effects just use the previewLength, but time-stretching/compressing
    // effects need to use a different input length, so override this method.
@@ -134,15 +240,21 @@ class AUDACITY_DLL_API Effect {
 
    // Get an unique ID assigned to each registered effect.
    // The first effect will have ID zero.
-   int GetID() {
-      return mID;
+   int GetEffectID() {
+      return mEffectID;
+   }
+
+   // Set an unique ID assigned to each registered effect.
+   void SetEffectID(int id) {
+      mEffectID = id;
    }
 
    // Returns true on success.  Will only operate on tracks that
    // have the "selected" flag set to true, which is consistent with
    // Audacity's standard UI.
    bool DoEffect(wxWindow *parent, int flags, double projectRate, TrackList *list,
-                 TrackFactory *factory, double *t0, double *t1, wxString params);
+                 TrackFactory *factory, SelectedRegion *selectedRegion,
+                 wxString params);
 
    wxString GetPreviewName();
 
@@ -155,6 +267,24 @@ class AUDACITY_DLL_API Effect {
    // important for sorting.
    static wxString StripAmpersand(const wxString& str);
 
+   int GetAudioInCount();
+   int GetAudioOutCount();
+
+   // Realtime Effect Processing
+   bool RealtimeInitialize();
+   bool RealtimeAddProcessor(int group, int chans, float rate);
+   bool RealtimeFinalize();
+   bool RealtimeSuspend();
+   bool RealtimeResume();
+   bool RealtimeProcessStart();
+   sampleCount RealtimeProcess(int group,
+                               int chans,
+                               float **inbuf,
+                               float **outbuf,
+                               sampleCount numSamples);
+   bool RealtimeProcessEnd();
+   bool IsRealtimeActive();
+
  //
  // protected virtual methods
  //
@@ -162,26 +292,18 @@ class AUDACITY_DLL_API Effect {
  // do its processing.
  //
  protected:
-   // The constructor is called once by each subclass at the beginning of the program.
-   // Avoid allocating memory or doing time-consuming processing here.
-   Effect();
-
-   virtual ~Effect();
-
    // Called once each time an effect is called.  Perform any initialization;
    // make sure that the effect can be performed on the selected tracks and
    // return false otherwise
-   virtual bool Init() {
-      return true;
-   }
+   virtual bool Init();
 
    // If necessary, open a dialog to get parameters from the user.
    // This method will not always be called (for example if a user
    // repeats an effect) but if it is called, it will be called
    // after Init.
-   virtual bool PromptUser() {
-      return true;
-   }
+   virtual bool PromptUser();
+   virtual bool PromptUser(wxWindow *parent, bool forceModal = false);
+
    // Check whether effect should be skipped
    // Typically this is only useful in automation, for example
    // detecting that zero noise reduction is to be done,
@@ -190,12 +312,10 @@ class AUDACITY_DLL_API Effect {
    virtual bool CheckWhetherSkipEffect() { return false; }
 
    // Actually do the effect here.
-   virtual bool Process() = 0;
+   virtual bool Process();
 
    // clean up any temporary memory
-   virtual void End() {
-   }
-
+   virtual void End();
 
  //
  // protected data
@@ -213,7 +333,14 @@ class AUDACITY_DLL_API Effect {
    TrackList      *mOutputTracks; // used only if CopyInputTracks() is called.
    double         mT0;
    double         mT1;
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   double         mF0;
+   double         mF1;
+#endif
    TimeWarper     *mWarper;
+   wxArrayString  mPresetNames;
+   wxArrayString  mPresetValues;
+
 
  //
  // protected methods
@@ -255,7 +382,7 @@ class AUDACITY_DLL_API Effect {
  protected:
    static double sDefaultGenerateLen;
    int mFlags;
-   double mLength;
+   double mDuration;
 
    // type of the tracks on mOutputTracks
    int mOutputTracksType;
@@ -278,8 +405,17 @@ class AUDACITY_DLL_API Effect {
  // Used only by the base Effect class
  //
  private:
+   void CommonInit();
    void CountWaveTracks();
 
+   // Driver for client effects
+   bool ProcessTrack(int count,
+                     WaveTrack *left,
+                     WaveTrack *right,
+                     sampleCount leftStart,
+                     sampleCount rightStart,
+                     sampleCount len);
+ 
  //
  // private data
  //
@@ -292,13 +428,31 @@ class AUDACITY_DLL_API Effect {
    int mNumTracks; //v This is really mNumWaveTracks, per CountWaveTracks() and GetNumWaveTracks().
    int mNumGroups;
 
-   int mID;
+   int mEffectID;
 
-   friend class BatchCommands;// so can call PromptUser.
-   friend class EffectManager;// so it can delete effects and access mID.
+   // For client driver
+   EffectClientInterface *mClient;
+   int mNumAudioIn;
+   int mNumAudioOut;
 
+   float **mInBuffer;
+   float **mOutBuffer;
+   float **mInBufPos;
+   float **mOutBufPos;
+
+   sampleCount mBufferSize;
+   sampleCount mBlockSize;
+   int mNumChannels;
+
+   wxArrayInt mGroupProcessor;
+   int mCurrentProcessor;
+
+   wxCriticalSection mRealtimeSuspendLock;
+   int mRealtimeSuspendCount;
+
+   friend class EffectManager;// so it can call PromptUser in support of batch commands.
+   friend class EffectRack;
 };
-
 
 // Base dialog for generate effect
 
@@ -322,10 +476,93 @@ public:
    virtual bool TransferDataFromWindow();
    virtual bool Validate();
    virtual void OnPreview(wxCommandEvent & event);
+   virtual void OnOk(wxCommandEvent & event);
 
 private:
    int mType;
    int mAdditionalButtons;
+
+   DECLARE_EVENT_TABLE();
+};
+
+WX_DECLARE_OBJARRAY(wxAcceleratorEntry, AccelArray);
+
+//
+class EffectUIHost : public wxDialog,
+                     public EffectUIHostInterface
+{
+public:
+   // constructors and destructors
+   EffectUIHost(wxWindow *parent,
+                Effect *effect,
+                EffectUIClientInterface *client);
+   virtual ~EffectUIHost();
+
+   bool Initialize();
+
+private:
+   void OnClose(wxCloseEvent & evt);
+   void OnApply(wxCommandEvent & evt);
+   void OnCancel(wxCommandEvent & evt);
+   void OnMenu(wxCommandEvent & evt);
+   void OnEnable(wxCommandEvent & evt);
+   void OnPlay(wxCommandEvent & evt);
+   void OnRewind(wxCommandEvent & evt);
+   void OnFFwd(wxCommandEvent & evt);
+   void OnPlayback(wxCommandEvent & evt);
+   void OnCapture(wxCommandEvent & evt);
+   void OnUserPreset(wxCommandEvent & evt);
+   void OnFactoryPreset(wxCommandEvent & evt);
+   void OnDeletePreset(wxCommandEvent & evt);
+   void OnSaveAs(wxCommandEvent & evt);
+   void OnImport(wxCommandEvent & evt);
+   void OnExport(wxCommandEvent & evt);
+   void OnOptions(wxCommandEvent & evt);
+   void OnDefaults(wxCommandEvent & evt);
+
+   void UpdateControls();
+   wxBitmap CreateBitmap(const char *xpm[], bool up, bool pusher);
+   void LoadUserPresets();
+
+private:
+   AudacityProject *mProject;
+   wxWindow *mParent;
+   Effect *mEffect;
+   EffectUIClientInterface *mClient;
+
+   wxArrayString mUserPresets;
+   bool mInitialized;
+
+   bool mIsGUI;
+
+   wxButton *mApplyBtn;
+   wxButton *mCloseBtn;
+   wxButton *mMenuBtn;
+   wxButton *mPlayBtn;
+   wxButton *mRewindBtn;
+   wxButton *mFFwdBtn;
+   wxCheckBox *mEnableCb;
+
+   wxButton *mEnableToggleBtn;
+   wxButton *mPlayToggleBtn;
+
+   wxBitmap mPlayBM;
+   wxBitmap mPlayDisabledBM;
+   wxBitmap mStopBM;
+   wxBitmap mStopDisabledBM;
+
+   bool mEnabled;
+
+   bool mDisableTransport;
+   bool mPlaying;
+   bool mCapturing;
+
+   SelectedRegion mRegion;
+   double mPlayPos;
+
+   AccelArray mAccels;
+
+   DECLARE_EVENT_TABLE();
 };
 
 // Utility functions
@@ -335,4 +572,3 @@ double TrapDouble(double x, double min, double max);
 long TrapLong(long x, long min, long max);
 
 #endif
-

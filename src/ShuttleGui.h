@@ -334,21 +334,24 @@ enum
    eHelpButton    = 0x0010,
    ePreviewButton = 0x0020,
    eDebugButton   = 0x0040,
-   eDefaultsButton= 0x0080,
-   ePreviewDryButton  = 0x0100
+   eSettingsButton= 0x0080,
+   ePreviewDryButton  = 0x0100,
+   eApplyButton   = 0x0200,
+   eCloseButton   = 0x0400,
 };
 
 enum
 {
    ePreviewID     = wxID_LOWEST - 1,
    eDebugID       = wxID_LOWEST - 2,
-   eDefaultsID    = wxID_LOWEST - 3,
-   ePreviewDryID  = wxID_LOWEST - 4
+   eSettingsID    = wxID_LOWEST - 3,
+   ePreviewDryID  = wxID_LOWEST - 4,
+   eCloseID       = wxID_CANCEL
 };
 
 AUDACITY_DLL_API wxSizer *CreateStdButtonSizer( wxWindow *parent,
                                long buttons = eOkButton | eCancelButton,
-                               wxButton *extra = NULL );
+                               wxWindow *extra = NULL );
 
 // ShuttleGui extends ShuttleGuiBase with Audacity specific extensions.
 class AUDACITY_DLL_API ShuttleGui : public ShuttleGuiBase

@@ -21,7 +21,7 @@ class EffectFadeIn: public EffectSimpleMono {
 
  public:
    virtual wxString GetEffectName() {
-      return wxString(_("Fade In"));
+      return wxString(wxTRANSLATE("Fade In"));
    }
 
    virtual std::set<wxString> GetEffectCategories() {
@@ -31,11 +31,15 @@ class EffectFadeIn: public EffectSimpleMono {
    }
 
    virtual wxString GetEffectIdentifier() {
-      return wxString(wxT("FadeIn"));
+      return wxString(wxT("Fade In"));
    }
 
    virtual wxString GetEffectAction() {
       return wxString(_("Fading In"));
+   }
+
+   virtual bool PromptUser() {
+      return true;
    }
 
  protected:
@@ -61,11 +65,15 @@ class EffectFadeOut:public EffectSimpleMono {
    }
 
    virtual wxString GetEffectIdentifier() {
-      return wxString(wxT("FadeOut"));
+      return wxString(wxT("Fade Out"));
    }
 
    virtual wxString GetEffectAction() {
       return wxString(_("Fading Out"));
+   }
+
+   virtual bool PromptUser() {
+      return true;
    }
 
  protected:

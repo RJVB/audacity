@@ -535,14 +535,14 @@ void ExportMultiple::OnExport(wxCommandEvent& WXUNUSED(event))
    {
       wxString msg;
       msg.Printf(
-         ok == eProgressSuccess ? _("Successfully exported the following %ld file(s).")
-           : (ok == eProgressFailed ? _("Something went wrong after exporting the following %ld file(s).")
-             : (ok == eProgressCancelled ? _("Export canceled after exporting the following %ld file(s).")
-               : (ok == eProgressStopped ? _("Export stopped after exporting the following %ld file(s).")
-                 : _("Something went really wrong after exporting the following %ld file(s).")
+         ok == eProgressSuccess ? _("Successfully exported the following %lld file(s).")
+           : (ok == eProgressFailed ? _("Something went wrong after exporting the following %lld file(s).")
+             : (ok == eProgressCancelled ? _("Export canceled after exporting the following %lld file(s).")
+               : (ok == eProgressStopped ? _("Export stopped after exporting the following %lld file(s).")
+                 : _("Something went really wrong after exporting the following %lld file(s).")
                  )
                )
-             ), mExported.GetCount());
+             ), (long long) mExported.GetCount());
 
       wxString FileList;
       for (size_t i = 0; i < mExported.GetCount(); i++) {
@@ -631,16 +631,17 @@ int ExportMultiple::ExportMultipleByLabel(bool byName,
       else {
          info = mLabels->GetLabel(l);
          name = (info->title);
-         setting.t0 = info->t;
+         setting.t0 = info->selectedRegion.t0();
       }
 
       // Figure out the ending time
-      if (info && info->t < info->t1) {
-         setting.t1 = info->t1;
+      if (info && !info->selectedRegion.isPoint()) {
+         setting.t1 = info->selectedRegion.t1();
       }
       else if (l < mNumLabels-1) {
+         // Use start of next label as end
          const LabelStruct *info1 = mLabels->GetLabel(l+1);
-         setting.t1 = info1->t;
+         setting.t1 = info1->selectedRegion.t0();
       }
       else {
          setting.t1 = mTracks->GetEndTime();
@@ -786,7 +787,8 @@ int ExportMultiple::ExportMultipleByTrack(bool byName,
       if (byName) {
          name = title;
          if (addNumber) {
-            name.Prepend(wxString::Format(wxT("%02d-"), l+1));
+            name.Prepend(
+				wxString::Format(wxT("%02d-"), l+1));
          }
       }
       else {

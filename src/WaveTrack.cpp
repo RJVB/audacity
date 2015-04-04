@@ -1326,21 +1326,21 @@ bool WaveTrack::Append(samplePtr buffer, sampleFormat format,
                        sampleCount len, unsigned int stride /* = 1 */,
                        XMLWriter *blockFileLog /* = NULL */)
 {
-   return GetLastOrCreateClip()->Append(buffer, format, len, stride,
+   return RightmostOrNewClip()->Append(buffer, format, len, stride,
                                         blockFileLog);
 }
 
 bool WaveTrack::AppendAlias(wxString fName, sampleCount start,
                             sampleCount len, int channel,bool useOD)
 {
-   return GetLastOrCreateClip()->AppendAlias(fName, start, len, channel,useOD);
+   return RightmostOrNewClip()->AppendAlias(fName, start, len, channel, useOD);
 }
 
 
 bool WaveTrack::AppendCoded(wxString fName, sampleCount start,
                             sampleCount len, int channel, int decodeType)
 {
-   return GetLastOrCreateClip()->AppendCoded(fName, start, len, channel, decodeType);
+   return RightmostOrNewClip()->AppendCoded(fName, start, len, channel, decodeType);
 }
 
 ///gets an int with OD flags so that we can determine which ODTasks should be run on this track after save/open, etc.
@@ -1401,12 +1401,13 @@ sampleCount WaveTrack::GetMaxBlockSize()
 
 sampleCount WaveTrack::GetIdealBlockSize()
 {
-   return GetLastOrCreateClip()->GetSequence()->GetIdealBlockSize();
+   return NewestOrNewClip()->GetSequence()->GetIdealBlockSize();
 }
 
 bool WaveTrack::Flush()
 {
-   return GetLastOrCreateClip()->Flush();
+   // After appending, presumably.  Do this to the clip that gets appended.
+   return RightmostOrNewClip()->Flush();
 }
 
 bool WaveTrack::HandleXMLTag(const wxChar *tag, const wxChar **attrs)
@@ -1491,7 +1492,7 @@ void WaveTrack::HandleXMLEndTag(const wxChar * WXUNUSED(tag))
 {
    // In case we opened a pre-multiclip project, we need to
    // simulate closing the waveclip tag.
-   GetLastOrCreateClip()->HandleXMLEndTag( wxT("waveclip") );
+   NewestOrNewClip()->HandleXMLEndTag(wxT("waveclip"));
 }
 
 XMLTagHandler *WaveTrack::HandleXMLChild(const wxChar *tag)
@@ -1502,13 +1503,13 @@ XMLTagHandler *WaveTrack::HandleXMLChild(const wxChar *tag)
    if (!wxStrcmp(tag, wxT("sequence")) || !wxStrcmp(tag, wxT("envelope")))
    {
       // This is a legacy project, so set the cached offset
-      GetLastOrCreateClip()->SetOffset(mLegacyProjectFileOffset);
+      NewestOrNewClip()->SetOffset(mLegacyProjectFileOffset);
 
       // Legacy project file tracks are imported as one single wave clip
       if (!wxStrcmp(tag, wxT("sequence")))
-         return GetLastOrCreateClip()->GetSequence();
+         return NewestOrNewClip()->GetSequence();
       else if (!wxStrcmp(tag, wxT("envelope")))
-         return GetLastOrCreateClip()->GetEnvelope();
+         return NewestOrNewClip()->GetEnvelope();
    }
 
    // JKC... for 1.1.0, one step better than what we had, but still badly broken.
@@ -1516,8 +1517,8 @@ XMLTagHandler *WaveTrack::HandleXMLChild(const wxChar *tag)
    if( !wxStrcmp( tag, wxT("waveblock" )))
    {
       // This is a legacy project, so set the cached offset
-      GetLastOrCreateClip()->SetOffset(mLegacyProjectFileOffset);
-      Sequence *pSeq = GetLastOrCreateClip()->GetSequence();
+      NewestOrNewClip()->SetOffset(mLegacyProjectFileOffset);
+      Sequence *pSeq = NewestOrNewClip()->GetSequence();
       return pSeq;
    }
 
@@ -1851,16 +1852,23 @@ void WaveTrack::GetEnvelopeValues(double *buffer, int bufferLen,
    if( bufferLen <= 0 )
       return;
 
-   // This is useful in debugging, to easily find null envelope settings, but
-   // should not be necessary in Release build.
-   // If we were going to set it to failsafe values in Release build, better to set each element to 1.0.
-   #ifdef __WXDEBUG__
-      memset(buffer, 0, sizeof(double)*bufferLen);
-   #endif
+   // The output buffer corresponds to an unbroken span of time which the callers expect
+   // to be fully valid.  As clips are processed below, the output buffer is updated with
+   // envelope values from any portion of a clip, start, end, middle, or none at all.
+   // Since this does not guarantee that the entire buffer is filled with values we need
+   // to initialize the entire buffer to a default value.
+   //
+   // This does mean that, in the cases where a usuable clip is located, the buffer value will
+   // be set twice.  Unfortunately, there is no easy way around this since the clips are not
+   // stored in increasing time order.  If they were, we could just track the time as the
+   // buffer is filled.
+   for (int i = 0; i < bufferLen; i++)
+   {
+      buffer[i] = 1.0;
+   }
 
    double startTime = t0;
    double endTime = t0+tstep*bufferLen;
-
    for (WaveClipList::compatibility_iterator it=GetClipIterator(); it; it=it->GetNext())
    {
       WaveClip *clip = it->GetData();
@@ -1884,8 +1892,6 @@ void WaveTrack::GetEnvelopeValues(double *buffer, int bufferLen,
 
          if (rt0 + rlen*tstep > dClipEndTime)
          {
-            //vvvvv debugging   int nStartSample = clip->GetStartSample();
-            //vvvvv debugging   int nEndSample = clip->GetEndSample();
             int nClipLen = clip->GetEndSample() - clip->GetStartSample();
 
             if (nClipLen <= 0) // Testing for bug 641, this problem is consistently '== 0', but doesn't hurt to check <.
@@ -1894,8 +1900,10 @@ void WaveTrack::GetEnvelopeValues(double *buffer, int bufferLen,
             // This check prevents problem cited in http://bugzilla.audacityteam.org/show_bug.cgi?id=528#c11,
             // Gale's cross_fade_out project, which was already corrupted by bug 528.
             // This conditional prevents the previous write past the buffer end, in clip->GetEnvelope() call.
-            if (nClipLen < rlen) // Never increase rlen here.
-               rlen = nClipLen;
+            // Never increase rlen here.
+            // PRL bug 827:  rewrote it again
+            rlen = std::min(rlen, nClipLen);
+            rlen = std::min(rlen, int(floor(0.5 + (dClipEndTime - rt0) / tstep)));
          }
          clip->GetEnvelope()->GetValues(rbuf, rlen, rt0, tstep);
       }
@@ -1971,7 +1979,7 @@ WaveClip* WaveTrack::CreateClip()
    return clip;
 }
 
-WaveClip* WaveTrack::GetLastOrCreateClip()
+WaveClip* WaveTrack::NewestOrNewClip()
 {
    if (mClips.IsEmpty()) {
       WaveClip *clip = CreateClip();
@@ -1980,6 +1988,29 @@ WaveClip* WaveTrack::GetLastOrCreateClip()
    }
    else
       return mClips.GetLast()->GetData();
+}
+
+WaveClip* WaveTrack::RightmostOrNewClip()
+{
+   if (mClips.IsEmpty()) {
+      WaveClip *clip = CreateClip();
+      clip->SetOffset(mOffset);
+      return clip;
+   }
+   else
+   {
+      WaveClipList::compatibility_iterator it = GetClipIterator();
+      WaveClip *rightmost = it->GetData();
+      double maxOffset = rightmost->GetOffset();
+      for (it = it->GetNext(); it; it = it->GetNext())
+      {
+         WaveClip *clip = it->GetData();
+         double offset = clip->GetOffset();
+         if (maxOffset < offset)
+            maxOffset = offset, rightmost = clip;
+      }
+      return rightmost;
+   }
 }
 
 int WaveTrack::GetClipIndex(WaveClip* clip)

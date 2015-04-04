@@ -24,23 +24,8 @@ class wxDC;
 class wxRadioButton;
 class wxSizeEvent;
 
-class TimeTextCtrl;
-
-class AUDACITY_DLL_API SelectionBarListener {
-
- public:
-
-   SelectionBarListener(){};
-   virtual ~SelectionBarListener(){};
-
-   virtual double AS_GetRate() = 0;
-   virtual void AS_SetRate(double rate) = 0;
-   virtual int AS_GetSnapTo() = 0;
-   virtual void AS_SetSnapTo(int snap) = 0;
-   virtual const wxString & AS_GetSelectionFormat() = 0;
-   virtual void AS_SetSelectionFormat(const wxString & format) = 0;
-   virtual void AS_ModifySelection(double &start, double &end, bool done) = 0;
-};
+class SelectionBarListener;
+class NumericTextCtrl;
 
 class SelectionBar:public ToolBar {
 
@@ -93,11 +78,11 @@ class SelectionBar:public ToolBar {
    double mStart, mEnd, mAudio;
    wxString mField[10];
 
-   TimeTextCtrl   *mLeftTime;
-   TimeTextCtrl   *mRightTime;
+   NumericTextCtrl   *mLeftTime;
+   NumericTextCtrl   *mRightTime;
    wxRadioButton  *mRightEndButton;
    wxRadioButton  *mRightLengthButton;
-   TimeTextCtrl   *mAudioTime;
+   NumericTextCtrl   *mAudioTime;
 
    wxComboBox     *mRateBox;
    wxChoice       *mSnapTo;

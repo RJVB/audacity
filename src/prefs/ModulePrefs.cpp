@@ -4,16 +4,14 @@
 
   ModulePrefs.cpp
 
-  Brian Gunlogson
-  Joshua Haberman
-  Dominic Mazzoni
   James Crook
-
 
 *******************************************************************//**
 
 \class ModulePrefs
-\brief A PrefsPanel to enable/disable certain modules.
+\brief A PrefsPanel to enable/disable certain modules.  'Modules' are 
+dynamically linked libraries that modify Audacity.  They are plug-ins 
+with names like mnod-script-pipe that add new features.
 
 *//*******************************************************************/
 
@@ -29,6 +27,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/* i18n-hint: Modules are optional extensions to Audacity that add new features.*/
 ModulePrefs::ModulePrefs(wxWindow * parent)
 :  PrefsPanel(parent, _("Modules"))
 {
@@ -47,7 +46,11 @@ void ModulePrefs::GetAllModuleStatuses(){
    //    mod-script-pipe
    //    mod-nyq-bench
    //    mod-track-panel
+   //    mod-menu-munger
+   //    mod-theming
 
+   // TODO: On an Audacity upgrade we should (?) actually untick modules.
+   // The old modules might be still around, and we do not want to use them.
    mModules.Clear();
    mStatuses.Clear();
 
@@ -95,16 +98,24 @@ void ModulePrefs::PopulateOrExchange(ShuttleGui & S)
 
    S.StartStatic(_(""));
    {
-      S.AddFixedText(_("These are experimental Modules. Enable them only if you've read the manual\nand know what you are doing.") );
-      S.AddFixedText(wxString(wxT("  ")) + _("'Ask' means Audacity will ask if you want to load the plug-each time it starts.") );
-      S.AddFixedText(wxString(wxT("  ")) + _("'Failed' means Audacity thinks the plug-in is broken and won't run it.") );
-      S.AddFixedText(wxString(wxT("  ")) + _("'New' is like 'Ask', but asks just once.") );
-      S.StartMultiColumn( 2 );
-      int i;
-      for(i=0;i<(int)mModules.GetCount();i++)
-         S.TieChoice( mModules[i], mStatuses[i], &StatusChoices );
-      S.EndMultiColumn();
-
+      S.AddFixedText(_("These are experimental modules. Enable them only if you've read the Audacity Manual\nand know what you are doing.") );
+      S.AddFixedText(wxString(wxT("  ")) + _("'Ask' means Audacity will ask if you want to load the module each time it starts.") );
+      S.AddFixedText(wxString(wxT("  ")) + _("'Failed' means Audacity thinks the module is broken and won't run it.") );
+      S.AddFixedText(wxString(wxT("  ")) + _("'New' means no choice has been made yet.") );
+      S.AddFixedText(_("Changes to these settings only take effect when Audacity starts up."));
+      S.StartScroller();
+      {
+        S.StartMultiColumn( 2 );
+        int i;
+        for(i=0;i<(int)mModules.GetCount();i++)
+           S.TieChoice( mModules[i], mStatuses[i], &StatusChoices );
+        S.EndMultiColumn();
+      }
+      if( mModules.GetCount() < 1 )
+      {
+        S.AddFixedText( _("No modules were found") );
+      }
+      S.EndScroller();
    }
    S.EndStatic();
 }
@@ -139,6 +150,7 @@ void ModulePrefs::SetModuleStatus( wxString fname, int iStatus ){
    wxString ShortName = wxFileName( fname ).GetName();
    wxString PrefName = wxString( wxT("/Module/") ) + ShortName.Lower();
    gPrefs->Write( PrefName, iStatus );
+   gPrefs->Flush();
 }
 
 

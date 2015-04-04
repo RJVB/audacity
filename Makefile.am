@@ -2,10 +2,20 @@ SUBDIRS = help images lib-src po src tests
 
 ACLOCAL_AMFLAGS = -I m4
 
+bin_SCRIPTS = audacity$(EXEEXT)
+
 dist_doc_DATA = LICENSE.txt README.txt
 dist_pkgdata_DATA = presets/EQDefaultCurves.xml
 
 nobase_dist_pkgdata_DATA = \
+   include/audacity/ConfigInterface.h \
+   include/audacity/EffectAutomationParameters.h \
+   include/audacity/EffectInterface.h \
+   include/audacity/IdentInterface.h \
+   include/audacity/ImporterInterface.h \
+   include/audacity/ModuleInterface.h \
+   include/audacity/PluginInterface.h \
+   include/audacity/Types.h \
    nyquist/bug.lsp \
    nyquist/dspprims.lsp \
    nyquist/envelopes.lsp \
@@ -50,8 +60,7 @@ nobase_dist_pkgdata_DATA = \
    plug-ins/beat.ny \
    plug-ins/clicktrack.ny \
    plug-ins/clipfix.ny \
-   plug-ins/crossfadein.ny \
-   plug-ins/crossfadeout.ny \
+   plug-ins/crossfadetracks.ny \
    plug-ins/delay.ny \
    plug-ins/equalabel.ny \
    plug-ins/highpass.ny \
@@ -67,3 +76,18 @@ nobase_dist_pkgdata_DATA = \
    plug-ins/vocalremover.ny \
    plug-ins/vocoder.ny \
    $(NULL)
+
+audacity$(EXEEXT): src/audacity$(EXEEXT)
+	rm -f audacity$(EXEEXT)
+	cp src/audacity$(EXEEXT) audacity$(EXEEXT)
+	[ -e plug-ins ] || ln -s $(srcdir)/plug-ins
+	[ -e nyquist ] || ln -s $(srcdir)/nyquist
+	[ -e locale ] || ln -s po locale
+
+modules:
+	mkdir -p modules
+	(cd lib-src/mod-nyq-bench && make clean && make && cp .libs/mod-nyq-bench.so ../../modules)
+
+.PHONY: modules
+
+CLEANFILES = audacity$(EXEEXT) plug-ins nyquist locale modules

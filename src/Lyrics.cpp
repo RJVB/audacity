@@ -58,7 +58,7 @@ void HighlightTextCtrl::OnMouseEvent(wxMouseEvent& event)
 
          //v Should probably select to end as in AudacityProject::OnSelectCursorEnd,
          // but better to generalize that in AudacityProject methods.
-         pProj->mViewInfo.sel1 = pCurSyl->t;
+         pProj->mViewInfo.selectedRegion.setT1(pCurSyl->t);
       }
    }
 
@@ -230,12 +230,12 @@ unsigned int Lyrics::GetDefaultFontSize() const
 
 void Lyrics::SetDrawnFont(wxDC *dc)
 {
-   dc->SetFont(wxFont(mKaraokeFontSize, wxSWISS, wxNORMAL, wxNORMAL));
+   dc->SetFont(wxFont(mKaraokeFontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
 }
 
 void Lyrics::SetHighlightFont() // for kHighlightLyrics
 {
-   wxFont newFont(mKaraokeFontSize, wxSWISS, wxNORMAL, wxNORMAL);
+   wxFont newFont(mKaraokeFontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
    mHighlightTextCtrl->SetDefaultStyle(wxTextAttr(wxNullColour, wxNullColour, newFont));
    mHighlightTextCtrl->SetStyle(0, mHighlightTextCtrl->GetLastPosition(),
                                  wxTextAttr(wxNullColour, wxNullColour, newFont));

@@ -245,7 +245,7 @@ void BenchmarkDialog::OnSave( wxCommandEvent & WXUNUSED(event))
    wxString fName = wxT("benchmark.txt");
 
    fName = FileSelector(wxT("Export Benchmark Data As:"),
-                        NULL, fName, wxT("txt"), wxT("*.txt"), wxFD_SAVE | wxRESIZE_BORDER, this);
+                        wxEmptyString, fName, wxT("txt"), wxT("*.txt"), wxFD_SAVE | wxRESIZE_BORDER, this);
 
    if (fName == wxT(""))
       return;
@@ -394,8 +394,8 @@ void BenchmarkDialog::OnRun( wxCommandEvent & WXUNUSED(event))
    t->GetEndTime();
 
    if (t->GetClipByIndex(0)->GetSequence()->GetNumSamples() != (sampleCount)nChunks * chunkSize) {
-      Printf(wxT("Expected len %d, track len %d.\n"), nChunks * chunkSize,
-             t->GetClipByIndex(0)->GetSequence()->GetNumSamples());
+      Printf(wxT("Expected len %d, track len %lld.\n"), nChunks * chunkSize,
+             (long long) t->GetClipByIndex(0)->GetSequence()->GetNumSamples());
       goto fail;
    }
 
@@ -415,8 +415,8 @@ void BenchmarkDialog::OnRun( wxCommandEvent & WXUNUSED(event))
          Printf(wxT("Trial %d\n"), z);
          Printf(wxT("Cut (%d, %d) failed.\n"), (x0 * chunkSize),
                 (x0 + xlen) * chunkSize);
-         Printf(wxT("Expected len %d, track len %d.\n"), nChunks * chunkSize,
-                t->GetClipByIndex(0)->GetSequence()->GetNumSamples());
+         Printf(wxT("Expected len %d, track len %lld.\n"), nChunks * chunkSize,
+                (long long) t->GetClipByIndex(0)->GetSequence()->GetNumSamples());
          goto fail;
       }
 
@@ -432,8 +432,8 @@ void BenchmarkDialog::OnRun( wxCommandEvent & WXUNUSED(event))
 
       if (t->GetClipByIndex(0)->GetSequence()->GetNumSamples() != (sampleCount) nChunks * chunkSize) {
          Printf(wxT("Trial %d\n"), z);
-         Printf(wxT("Expected len %d, track len %d.\n"), nChunks * chunkSize,
-                t->GetClipByIndex(0)->GetSequence()->GetNumSamples());
+         Printf(wxT("Expected len %d, track len %lld.\n"), nChunks * chunkSize,
+                (long long) t->GetClipByIndex(0)->GetSequence()->GetNumSamples());
          goto fail;
       }
       // Copy

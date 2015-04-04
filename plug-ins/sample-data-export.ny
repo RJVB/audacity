@@ -4,6 +4,8 @@
 ;name "Sample Data Export..."
 ;action "Analyzing..."
 ;categories "http://lv2plug.in/ns/lv2core#AnalyserPlugin"
+;author "Steve Daulton"
+;copyright "Released under terms of the GNU General Public License version 2"
 
 ;; sample-data-export.ny by Steve Daulton June 2012.
 ;; Updated July 16 2012.
@@ -315,7 +317,7 @@ Length processed: ~a samples ~a seconds.~a"
 (defun fullhead ()
   (format nil
 "~a~%Sample Rate: ~a Hz. Sample values on ~a scale. ~a.~%~aLength processed: ~a ~
-samples, ~a seconds.~%Peak amplitude: ~a (lin) ~a dB.  Unweighted rms: ~a dB.~%~
+samples, ~a seconds.~%Peak amplitude: ~a (lin) ~a dB.  Unweighted RMS: ~a dB.~%~
 DC offset: ~a~a" 
   filename                                  ; file name
   (get 'info 'srate)                        ; sample rate

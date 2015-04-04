@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
       <Configuration>Debug</Configuration>
@@ -7,6 +7,14 @@
     </ProjectConfiguration>
     <ProjectConfiguration Include="Release|Win32">
       <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="wx3-Debug|Win32">
+      <Configuration>wx3-Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="wx3-Release|Win32">
+      <Configuration>wx3-Release</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
   </ItemGroup>
@@ -17,15 +25,31 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
+    <LocalDebuggerEnvironment>PATH=%WXWIN%\lib\vc_dll;%PATH%</LocalDebuggerEnvironment>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v120</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <LocalDebuggerEnvironment>PATH=%WXWIN3%\lib\vc_dll;%PATH%</LocalDebuggerEnvironment>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120_xp</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
+    <LocalDebuggerEnvironment>PATH=%WXWIN%\lib\vc_dll;%PATH%</LocalDebuggerEnvironment>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v120_xp</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <LocalDebuggerEnvironment>PATH=%WXWIN3%\lib\vc_dll;%PATH%</LocalDebuggerEnvironment>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -34,7 +58,13 @@
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
@@ -45,7 +75,16 @@
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\</IntDir>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">
+    <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
+    <IntDir>$(Configuration)\</IntDir>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
+    <IntDir>$(Configuration)\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\</IntDir>
     <LinkIncremental>true</LinkIncremental>
@@ -53,7 +92,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(WXWIN)\lib\vc_dll\mswu;$(WXWIN)\include;..\..;..\..\..\lib-src\expat\lib;..\..\..\lib-src\FileDialog;..\..\..\lib-src\FileDialog\win;..\..\..\lib-src\ffmpeg\win32;..\..\..\lib-src\ffmpeg;..\..\..\lib-src\lib-widget-extra;..\..\..\lib-src\libflac\include;..\..\..\lib-src\libid3tag;..\..\..\lib-src\libmad\msvc++;..\..\..\lib-src\libmad;..\..\..\lib-src\libnyquist;..\..\..\lib-src\libogg\include;..\..\..\lib-src\libresample\include;..\..\..\lib-src\libsamplerate\src;..\..\..\lib-src\libscorealign;..\libsndfile;..\..\..\lib-src\libsoxr\src;..\..\..\lib-src\libvamp;..\..\..\lib-src\libvorbis\include;..\..\..\lib-src\portaudio-v19\include;..\..\..\lib-src\portmixer\include;..\..\..\lib-src\portsmf;..\..\..\lib-src\sbsms\include;..\..\..\lib-src\soundtouch\include;..\..\..\lib-src\twolame\libtwolame;..\..\..\lib-src\portmidi\pm_common;..\..\..\lib-src\portmidi\pm_win;..\..\..\lib-src\portmidi\porttime;..\..\..\lib-src\lv2\lilv;..\..\..\lib-src\lv2\lv2;..\..\..\lib-src\lame;$(GSTREAMER_SDK)\include\gstreamer-1.0;$(GSTREAMER_SDK)\include\glib-2.0;$(GSTREAMER_SDK)\lib\glib-2.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(WXWIN)\lib\vc_dll\mswu;$(WXWIN)\include;..\..;..\..\..\include;..\..\..\lib-src\expat\lib;..\..\..\lib-src\FileDialog;..\..\..\lib-src\FileDialog\win;..\..\..\lib-src\ffmpeg\win32;..\..\..\lib-src\ffmpeg;..\..\..\lib-src\lib-widget-extra;..\..\..\lib-src\libflac\include;..\..\..\lib-src\libid3tag;..\..\..\lib-src\libmad\msvc++;..\..\..\lib-src\libmad;..\..\..\lib-src\libnyquist;..\..\..\lib-src\libogg\include;..\..\..\lib-src\libresample\include;..\..\..\lib-src\libsamplerate\src;..\..\..\lib-src\libscorealign;..\libsndfile;..\..\..\lib-src\libsoxr\src;..\..\..\lib-src\libvamp;..\..\..\lib-src\libvorbis\include;..\..\..\lib-src\portaudio-v19\include;..\..\..\lib-src\portmixer\include;..\..\..\lib-src\portsmf;..\..\..\lib-src\sbsms\include;..\..\..\lib-src\soundtouch\include;..\..\..\lib-src\twolame\libtwolame;..\..\..\lib-src\portmidi\pm_common;..\..\..\lib-src\portmidi\pm_win;..\..\..\lib-src\portmidi\porttime;..\..\..\lib-src\lv2\lilv;..\..\..\lib-src\lv2\lv2;..\..\..\lib-src\lame;$(GSTREAMER_SDK)\include\gstreamer-1.0;$(GSTREAMER_SDK)\include\glib-2.0;$(GSTREAMER_SDK)\lib\glib-2.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>BUILDING_AUDACITY;FLAC__NO_DLL;XML_STATIC;__STDC_CONSTANT_MACROS;WXUSINGDLL;__WXMSW__;NDEBUG;WIN32;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -74,7 +113,6 @@
     <Link>
       <AdditionalDependencies>expat.lib;filedialog.lib;libsndfile.lib;portaudio-v19.lib;wxbase28u.lib;wxbase28u_net.lib;wxmsw28u_adv.lib;wxmsw28u_core.lib;wxmsw28u_html.lib;wxpng.lib;wxzlib.lib;wxjpeg.lib;wxtiff.lib;comctl32.lib;rpcrt4.lib;wsock32.lib;winmm.lib;oleacc.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir);$(WXWIN)\lib\vc_dll;$(GSTREAMER_SDK)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <IgnoreSpecificDefaultLibraries>dsound.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <SubSystem>Windows</SubSystem>
       <StackReserveSize>8388608</StackReserveSize>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
@@ -82,10 +120,42 @@
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <AdditionalIncludeDirectories>$(WXWIN3)\lib\vc_dll\mswu;$(WXWIN3)\include;..\..;..\..\..\include;..\..\..\lib-src\expat\lib;..\..\..\lib-src\FileDialog;..\..\..\lib-src\FileDialog\win;..\..\..\lib-src\ffmpeg\win32;..\..\..\lib-src\ffmpeg;..\..\..\lib-src\lib-widget-extra;..\..\..\lib-src\libflac\include;..\..\..\lib-src\libid3tag;..\..\..\lib-src\libmad\msvc++;..\..\..\lib-src\libmad;..\..\..\lib-src\libnyquist;..\..\..\lib-src\libogg\include;..\..\..\lib-src\libresample\include;..\..\..\lib-src\libsamplerate\src;..\..\..\lib-src\libscorealign;..\libsndfile;..\..\..\lib-src\libsoxr\src;..\..\..\lib-src\libvamp;..\..\..\lib-src\libvorbis\include;..\..\..\lib-src\portaudio-v19\include;..\..\..\lib-src\portmixer\include;..\..\..\lib-src\portsmf;..\..\..\lib-src\sbsms\include;..\..\..\lib-src\soundtouch\include;..\..\..\lib-src\twolame\libtwolame;..\..\..\lib-src\portmidi\pm_common;..\..\..\lib-src\portmidi\pm_win;..\..\..\lib-src\portmidi\porttime;..\..\..\lib-src\lv2\lilv;..\..\..\lib-src\lv2\lv2;..\..\..\lib-src\lame;$(GSTREAMER_SDK)\include\gstreamer-1.0;$(GSTREAMER_SDK)\include\glib-2.0;$(GSTREAMER_SDK)\lib\glib-2.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>BUILDING_AUDACITY;FLAC__NO_DLL;XML_STATIC;__STDC_CONSTANT_MACROS;WXUSINGDLL;__WXMSW__;NDEBUG;WIN32;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <PrecompiledHeaderOutputFile>.\$(Configuration)/audacity.pch</PrecompiledHeaderOutputFile>
+      <WarningLevel>Level3</WarningLevel>
+      <CompileAs>Default</CompileAs>
+      <DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0809</Culture>
+      <AdditionalIncludeDirectories>$(WXWIN3)\include;..\..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <Link>
+      <AdditionalDependencies>expat.lib;filedialog.lib;libsndfile.lib;portaudio-v19.lib;wxbase30u.lib;wxbase30u_net.lib;wxmsw30u_adv.lib;wxmsw30u_core.lib;wxmsw30u_html.lib;wxpng.lib;wxzlib.lib;wxjpeg.lib;wxtiff.lib;comctl32.lib;rpcrt4.lib;wsock32.lib;winmm.lib;oleacc.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(OutDir);$(WXWIN3)\lib\vc_dll;$(GSTREAMER_SDK)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <SubSystem>Windows</SubSystem>
+      <StackReserveSize>8388608</StackReserveSize>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>
+      </DataExecutionPrevention>
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(WXWIN)\lib\vc_dll\mswud;$(WXWIN)\include;..\..;..\..\..\lib-src\expat\lib;..\..\..\lib-src\FileDialog;..\..\..\lib-src\FileDialog\win;..\..\..\lib-src\lib-widget-extra;..\..\..\lib-src\libflac\include;..\..\..\lib-src\libid3tag;..\..\..\lib-src\libmad\msvc++;..\..\..\lib-src\libmad;..\..\..\lib-src\libnyquist;..\..\..\lib-src\libogg\include;..\..\..\lib-src\libresample\include;..\..\..\lib-src\libsamplerate\src;..\..\..\lib-src\libscorealign;..\libsndfile;..\..\..\lib-src\libsoxr\src;..\..\..\lib-src\libvamp;..\..\..\lib-src\libvorbis\include;..\..\..\lib-src\portaudio-v19\include;..\..\..\lib-src\portmixer\include;..\..\..\lib-src\portsmf;..\..\..\lib-src\sbsms\include;..\..\..\lib-src\soundtouch\include;..\..\..\lib-src\twolame\libtwolame;..\..\..\lib-src\portmidi\pm_common;..\..\..\lib-src\portmidi\pm_win;..\..\..\lib-src\portmidi\porttime;..\..\..\lib-src\ffmpeg\win32;..\..\..\lib-src\ffmpeg;..\..\..\lib-src\lv2\lilv;..\..\..\lib-src\lv2\lv2;..\..\..\lib-src\lame;&amp;quot;$(GSTREAMER_SDK)\include\gstreamer-1.0;$(GSTREAMER_SDK)\include\glib-2.0;$(GSTREAMER_SDK)\lib\glib-2.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(WXWIN)\lib\vc_dll\mswud;$(WXWIN)\include;..\..;..\..\..\include;..\..\..\lib-src\expat\lib;..\..\..\lib-src\FileDialog;..\..\..\lib-src\FileDialog\win;..\..\..\lib-src\lib-widget-extra;..\..\..\lib-src\libflac\include;..\..\..\lib-src\libid3tag;..\..\..\lib-src\libmad\msvc++;..\..\..\lib-src\libmad;..\..\..\lib-src\libnyquist;..\..\..\lib-src\libogg\include;..\..\..\lib-src\libresample\include;..\..\..\lib-src\libsamplerate\src;..\..\..\lib-src\libscorealign;..\libsndfile;..\..\..\lib-src\libsoxr\src;..\..\..\lib-src\libvamp;..\..\..\lib-src\libvorbis\include;..\..\..\lib-src\portaudio-v19\include;..\..\..\lib-src\portmixer\include;..\..\..\lib-src\portsmf;..\..\..\lib-src\sbsms\include;..\..\..\lib-src\soundtouch\include;..\..\..\lib-src\twolame\libtwolame;..\..\..\lib-src\portmidi\pm_common;..\..\..\lib-src\portmidi\pm_win;..\..\..\lib-src\portmidi\porttime;..\..\..\lib-src\ffmpeg\win32;..\..\..\lib-src\ffmpeg;..\..\..\lib-src\lv2\lilv;..\..\..\lib-src\lv2\lv2;..\..\..\lib-src\lame;&amp;quot;$(GSTREAMER_SDK)\include\gstreamer-1.0;$(GSTREAMER_SDK)\include\glib-2.0;$(GSTREAMER_SDK)\lib\glib-2.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>BUILDING_AUDACITY;FLAC__NO_DLL;XML_STATIC;__STDC_CONSTANT_MACROS;WXUSINGDLL;__WXMSW__;__WXDEBUG__;_DEBUG;WIN32;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -110,12 +180,48 @@
     <Link>
       <AdditionalDependencies>expat.lib;filedialog.lib;libsndfile.lib;portaudio-v19.lib;wxbase28ud.lib;wxbase28ud_net.lib;wxmsw28ud_adv.lib;wxmsw28ud_core.lib;wxmsw28ud_html.lib;wxpngd.lib;wxzlibd.lib;wxjpegd.lib;wxtiffd.lib;comctl32.lib;rpcrt4.lib;wsock32.lib;winmm.lib;oleacc.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir);$(WXWIN)\lib\vc_dll;$(GSTREAMER_SDK)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <IgnoreSpecificDefaultLibraries>dsound.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <StackReserveSize>8388608</StackReserveSize>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention />
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>$(WXWIN3)\lib\vc_dll\mswud;$(WXWIN3)\include;..\..;..\..\..\include;..\..\..\lib-src\expat\lib;..\..\..\lib-src\FileDialog;..\..\..\lib-src\FileDialog\win;..\..\..\lib-src\lib-widget-extra;..\..\..\lib-src\libflac\include;..\..\..\lib-src\libid3tag;..\..\..\lib-src\libmad\msvc++;..\..\..\lib-src\libmad;..\..\..\lib-src\libnyquist;..\..\..\lib-src\libogg\include;..\..\..\lib-src\libresample\include;..\..\..\lib-src\libsamplerate\src;..\..\..\lib-src\libscorealign;..\libsndfile;..\..\..\lib-src\libsoxr\src;..\..\..\lib-src\libvamp;..\..\..\lib-src\libvorbis\include;..\..\..\lib-src\portaudio-v19\include;..\..\..\lib-src\portmixer\include;..\..\..\lib-src\portsmf;..\..\..\lib-src\sbsms\include;..\..\..\lib-src\soundtouch\include;..\..\..\lib-src\twolame\libtwolame;..\..\..\lib-src\portmidi\pm_common;..\..\..\lib-src\portmidi\pm_win;..\..\..\lib-src\portmidi\porttime;..\..\..\lib-src\ffmpeg\win32;..\..\..\lib-src\ffmpeg;..\..\..\lib-src\lv2\lilv;..\..\..\lib-src\lv2\lv2;..\..\..\lib-src\lame;&amp;quot;$(GSTREAMER_SDK)\include\gstreamer-1.0;$(GSTREAMER_SDK)\include\glib-2.0;$(GSTREAMER_SDK)\lib\glib-2.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>BUILDING_AUDACITY;FLAC__NO_DLL;XML_STATIC;__STDC_CONSTANT_MACROS;WXUSINGDLL;__WXMSW__;__WXDEBUG__;_DEBUG;WIN32;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>AudacityHeaders.h</PrecompiledHeaderFile>
+      <WarningLevel>Level4</WarningLevel>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+      <DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <ForcedIncludeFiles>AudacityHeaders.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0809</Culture>
+      <AdditionalIncludeDirectories>$(WXWIN3)\include;..\..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <Link>
+      <AdditionalDependencies>expat.lib;filedialog.lib;libsndfile.lib;portaudio-v19.lib;wxbase30ud.lib;wxbase30ud_net.lib;wxmsw30ud_adv.lib;wxmsw30ud_core.lib;wxmsw30ud_html.lib;wxpngd.lib;wxzlibd.lib;wxjpegd.lib;wxtiffd.lib;comctl32.lib;rpcrt4.lib;wsock32.lib;winmm.lib;oleacc.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(OutDir);$(WXWIN3)\lib\vc_dll;$(GSTREAMER_SDK)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+      <StackReserveSize>8388608</StackReserveSize>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>
+      </DataExecutionPrevention>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
   </ItemDefinitionGroup>
@@ -125,6 +231,7 @@
     <ClCompile Include="..\..\..\src\AudacityApp.cpp" />
     <ClCompile Include="..\..\..\src\AudacityHeaders.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\..\src\AudacityLogger.cpp" />
     <ClCompile Include="..\..\..\src\AudioIO.cpp" />
@@ -137,9 +244,13 @@
     <ClCompile Include="..\..\..\src\CaptureEvents.cpp" />
     <ClCompile Include="..\..\..\src\commands\OpenSaveCommands.cpp" />
     <ClCompile Include="..\..\..\src\Dependencies.cpp" />
+    <ClCompile Include="..\..\..\src\DeviceChange.cpp" />
     <ClCompile Include="..\..\..\src\DeviceManager.cpp" />
     <ClCompile Include="..\..\..\src\DirManager.cpp" />
     <ClCompile Include="..\..\..\src\Dither.cpp" />
+    <ClCompile Include="..\..\..\src\effects\EffectRack.cpp" />
+    <ClCompile Include="..\..\..\src\effects\NoiseReduction.cpp" />
+    <ClCompile Include="..\..\..\src\effects\Phaser.cpp" />
     <ClCompile Include="..\..\..\src\Envelope.cpp" />
     <ClCompile Include="..\..\..\src\FFmpeg.cpp" />
     <ClCompile Include="..\..\..\src\FFT.cpp" />
@@ -161,7 +272,6 @@
     <ClCompile Include="..\..\..\src\LangChoice.cpp" />
     <ClCompile Include="..\..\..\src\Languages.cpp" />
     <ClCompile Include="..\..\..\src\Legacy.cpp" />
-    <ClCompile Include="..\..\..\src\LoadModules.cpp" />
     <ClCompile Include="..\..\..\src\Lyrics.cpp" />
     <ClCompile Include="..\..\..\src\LyricsWindow.cpp" />
     <ClCompile Include="..\..\..\src\Matrix.cpp" />
@@ -169,6 +279,7 @@
     <ClCompile Include="..\..\..\src\Mix.cpp" />
     <ClCompile Include="..\..\..\src\MixerBoard.cpp" />
     <ClCompile Include="..\..\..\lib-src\lib-widget-extra\NonGuiThread.cpp" />
+    <ClCompile Include="..\..\..\src\ModuleManager.cpp" />
     <ClCompile Include="..\..\..\src\NoteTrack.cpp" />
     <ClCompile Include="..\..\..\src\PitchName.cpp" />
     <ClCompile Include="..\..\..\src\PlatformCompatibility.cpp" />
@@ -189,9 +300,13 @@
     <ClCompile Include="..\..\..\src\Snap.cpp" />
     <ClCompile Include="..\..\..\src\SoundActivatedRecord.cpp">
       <ObjectFileName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)%(Filename)1.obj</ObjectFileName>
+      <ObjectFileName Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">$(IntDir)%(Filename)1.obj</ObjectFileName>
       <XMLDocumentationFileName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)%(Filename)1.xdc</XMLDocumentationFileName>
+      <XMLDocumentationFileName Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">$(IntDir)%(Filename)1.xdc</XMLDocumentationFileName>
       <ObjectFileName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename)1.obj</ObjectFileName>
+      <ObjectFileName Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">$(IntDir)%(Filename)1.obj</ObjectFileName>
       <XMLDocumentationFileName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename)1.xdc</XMLDocumentationFileName>
+      <XMLDocumentationFileName Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">$(IntDir)%(Filename)1.xdc</XMLDocumentationFileName>
     </ClCompile>
     <ClCompile Include="..\..\..\src\Spectrum.cpp" />
     <ClCompile Include="..\..\..\src\SplashDialog.cpp" />
@@ -201,6 +316,7 @@
     <ClCompile Include="..\..\..\src\TimeDialog.cpp" />
     <ClCompile Include="..\..\..\src\TimerRecordDialog.cpp" />
     <ClCompile Include="..\..\..\src\TimeTrack.cpp" />
+    <ClCompile Include="..\..\..\src\toolbars\SpectralSelectionBar.cpp" />
     <ClCompile Include="..\..\..\src\Track.cpp" />
     <ClCompile Include="..\..\..\src\TrackArtist.cpp" />
     <ClCompile Include="..\..\..\src\TrackPanel.cpp" />
@@ -210,6 +326,7 @@
     <ClCompile Include="..\..\..\src\WaveClip.cpp" />
     <ClCompile Include="..\..\..\src\WaveTrack.cpp" />
     <ClCompile Include="..\..\..\src\widgets\HelpSystem.cpp" />
+    <ClCompile Include="..\..\..\src\widgets\NumericTextCtrl.cpp" />
     <ClCompile Include="..\..\..\src\WrappedType.cpp" />
     <ClCompile Include="..\..\..\src\effects\Amplify.cpp" />
     <ClCompile Include="..\..\..\src\effects\AutoDuck.cpp" />
@@ -237,7 +354,6 @@
     <ClCompile Include="..\..\..\src\effects\NoiseRemoval.cpp" />
     <ClCompile Include="..\..\..\src\effects\Normalize.cpp" />
     <ClCompile Include="..\..\..\src\effects\Paulstretch.cpp" />
-    <ClCompile Include="..\..\..\src\effects\Phaser.cpp" />
     <ClCompile Include="..\..\..\src\effects\Repair.cpp" />
     <ClCompile Include="..\..\..\src\effects\Repeat.cpp" />
     <ClCompile Include="..\..\..\src\effects\Reverb.cpp" />
@@ -314,7 +430,6 @@
     <ClCompile Include="..\..\..\src\widgets\numformatter.cpp" />
     <ClCompile Include="..\..\..\src\widgets\ProgressDialog.cpp" />
     <ClCompile Include="..\..\..\src\widgets\Ruler.cpp" />
-    <ClCompile Include="..\..\..\src\widgets\TimeTextCtrl.cpp" />
     <ClCompile Include="..\..\..\src\widgets\valnum.cpp" />
     <ClCompile Include="..\..\..\src\widgets\Warning.cpp" />
     <ClCompile Include="..\..\..\src\xml\XMLFileReader.cpp" />
@@ -355,7 +470,6 @@
     <ClCompile Include="..\..\..\src\blockfile\SilentBlockFile.cpp" />
     <ClCompile Include="..\..\..\src\blockfile\SimpleBlockFile.cpp" />
     <ClCompile Include="..\..\..\src\effects\ladspa\LadspaEffect.cpp" />
-    <ClCompile Include="..\..\..\src\effects\ladspa\LoadLadspa.cpp" />
     <ClCompile Include="..\..\..\src\toolbars\ControlToolBar.cpp" />
     <ClCompile Include="..\..\..\src\toolbars\DeviceToolBar.cpp" />
     <ClCompile Include="..\..\..\src\toolbars\EditToolBar.cpp" />
@@ -382,6 +496,14 @@
     <ClCompile Include="..\..\..\src\effects\lv2\LV2PortGroup.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\include\audacity\ConfigInterface.h" />
+    <ClInclude Include="..\..\..\include\audacity\EffectAutomationParameters.h" />
+    <ClInclude Include="..\..\..\include\audacity\EffectInterface.h" />
+    <ClInclude Include="..\..\..\include\audacity\IdentInterface.h" />
+    <ClInclude Include="..\..\..\include\audacity\ImporterInterface.h" />
+    <ClInclude Include="..\..\..\include\audacity\ModuleInterface.h" />
+    <ClInclude Include="..\..\..\include\audacity\PluginInterface.h" />
+    <ClInclude Include="..\..\..\include\audacity\Types.h" />
     <ClInclude Include="..\..\..\src\AboutDialog.h" />
     <ClInclude Include="..\..\..\src\AColor.h" />
     <ClInclude Include="..\..\..\src\AllThemeResources.h" />
@@ -389,6 +511,7 @@
     <ClInclude Include="..\..\..\src\AudacityApp.h" />
     <ClInclude Include="..\..\..\src\AudacityLogger.h" />
     <ClInclude Include="..\..\..\src\AudioIO.h" />
+    <ClInclude Include="..\..\..\src\AudioIOListener.h" />
     <ClInclude Include="..\..\..\src\AutoRecovery.h" />
     <ClInclude Include="..\..\..\src\BatchCommandDialog.h" />
     <ClInclude Include="..\..\..\src\BatchCommands.h" />
@@ -397,12 +520,20 @@
     <ClInclude Include="..\..\..\src\BlockFile.h" />
     <ClInclude Include="..\..\..\src\CaptureEvents.h" />
     <ClInclude Include="..\..\..\src\commands\OpenSaveCommands.h" />
+    <ClInclude Include="..\..\..\src\DeviceChange.h" />
+    <ClInclude Include="..\..\..\src\effects\EffectRack.h" />
+    <ClInclude Include="..\..\..\src\effects\NoiseReduction.h" />
+    <ClInclude Include="..\..\..\src\effects\Phaser.h" />
     <ClInclude Include="..\..\..\src\import\FormatClassifier.h" />
     <ClInclude Include="..\..\..\src\import\ImportGStreamer.h" />
     <ClInclude Include="..\..\..\src\import\MultiFormatReader.h" />
     <ClInclude Include="..\..\..\src\import\SpecPowerMeter.h" />
+    <ClInclude Include="..\..\..\src\ModuleManager.h" />
     <ClInclude Include="..\..\..\src\SseMathFuncs.h" />
+    <ClInclude Include="..\..\..\src\toolbars\SpectralSelectionBar.h" />
+    <ClInclude Include="..\..\..\src\toolbars\SpectralSelectionBarListener.h" />
     <ClInclude Include="..\..\..\src\widgets\HelpSystem.h" />
+    <ClInclude Include="..\..\..\src\widgets\NumericTextCtrl.h" />
     <ClInclude Include="..\..\configwin.h" />
     <ClInclude Include="..\..\..\src\Dependencies.h" />
     <ClInclude Include="..\..\..\src\DeviceManager.h" />
@@ -426,7 +557,6 @@
     <ClInclude Include="..\..\..\src\LangChoice.h" />
     <ClInclude Include="..\..\..\src\Languages.h" />
     <ClInclude Include="..\..\..\src\Legacy.h" />
-    <ClInclude Include="..\..\..\src\LoadModules.h" />
     <ClInclude Include="..\..\..\src\Lyrics.h" />
     <ClInclude Include="..\..\..\src\LyricsWindow.h" />
     <ClInclude Include="..\..\..\src\MacroMagic.h" />
@@ -497,7 +627,6 @@
     <ClInclude Include="..\..\..\src\effects\NoiseRemoval.h" />
     <ClInclude Include="..\..\..\src\effects\Normalize.h" />
     <ClInclude Include="..\..\..\src\effects\Paulstretch.h" />
-    <ClInclude Include="..\..\..\src\effects\Phaser.h" />
     <ClInclude Include="..\..\..\src\effects\Repair.h" />
     <ClInclude Include="..\..\..\src\effects\Repeat.h" />
     <ClInclude Include="..\..\..\src\effects\Reverb.h" />
@@ -576,7 +705,6 @@
     <ClInclude Include="..\..\..\src\widgets\numformatter.h" />
     <ClInclude Include="..\..\..\src\widgets\ProgressDialog.h" />
     <ClInclude Include="..\..\..\src\widgets\Ruler.h" />
-    <ClInclude Include="..\..\..\src\widgets\TimeTextCtrl.h" />
     <ClInclude Include="..\..\..\src\widgets\valnum.h" />
     <ClInclude Include="..\..\..\src\widgets\Warning.h" />
     <ClInclude Include="..\..\..\src\xml\XMLFileReader.h" />
@@ -621,7 +749,6 @@
     <ClInclude Include="..\..\..\src\blockfile\SimpleBlockFile.h" />
     <ClInclude Include="..\..\..\src\effects\ladspa\ladspa.h" />
     <ClInclude Include="..\..\..\src\effects\ladspa\LadspaEffect.h" />
-    <ClInclude Include="..\..\..\src\effects\ladspa\LoadLadspa.h" />
     <ClInclude Include="..\..\..\src\toolbars\ControlToolBar.h" />
     <ClInclude Include="..\..\..\src\toolbars\DeviceToolBar.h" />
     <ClInclude Include="..\..\..\src\toolbars\EditToolBar.h" />
@@ -658,8 +785,7 @@
     <copy Include="..\..\..\plug-ins\beat.ny" />
     <copy Include="..\..\..\plug-ins\clicktrack.ny" />
     <copy Include="..\..\..\plug-ins\clipfix.ny" />
-    <copy Include="..\..\..\plug-ins\crossfadein.ny" />
-    <copy Include="..\..\..\plug-ins\crossfadeout.ny" />
+    <copy Include="..\..\..\plug-ins\crossfadetracks.ny" />
     <copy Include="..\..\..\plug-ins\delay.ny" />
     <copy Include="..\..\..\plug-ins\equalabel.ny" />
     <copy Include="..\..\..\plug-ins\highpass.ny" />
@@ -670,6 +796,9 @@
     <copy Include="..\..\..\plug-ins\sample-data-export.ny" />
     <copy Include="..\..\..\plug-ins\SilenceMarker.ny" />
     <copy Include="..\..\..\plug-ins\SoundFinder.ny" />
+    <copy Include="..\..\..\plug-ins\SpectralEditMulti.ny" />
+    <copy Include="..\..\..\plug-ins\SpectralEditParametricEQ.ny" />
+    <copy Include="..\..\..\plug-ins\SpectralEditShelves.ny" />
     <copy Include="..\..\..\plug-ins\StudioFadeOut.ny" />
     <copy Include="..\..\..\plug-ins\tremolo.ny" />
     <copy Include="..\..\..\plug-ins\vocalremover.ny" />
@@ -678,268 +807,431 @@
   <ItemGroup>
     <CustomBuild Include="..\..\..\nyquist\bug.lsp">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\dspprims.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\envelopes.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\equalizer.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\evalenv.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\fileio.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\follow.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\init.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\misc.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\nyinit.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\nyqmisc.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\nyquist.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\printrec.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\profile.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand1.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand10.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand11.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand12.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand2.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand3.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand4.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand5.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand6.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand7.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand8.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mand9.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\mandpluk.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\marmstk1.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\rawwaves\sinewave.raw">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\rawwaves\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\sal-parse.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\sal.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\seq.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\seqfnint.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\seqmidi.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\sndfnint.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\stk.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="..\..\..\lib-src\libnyquist\nyquist\sys\win\msvc\system.lsp">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\xlinit.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\xm.lsp">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
     <None Include="..\..\ny.rules" />
     <None Include="..\..\po.rules" />
@@ -971,10 +1263,6 @@
     </ProjectReference>
     <ProjectReference Include="..\libogg\libogg.vcxproj">
       <Project>{a939aaf8-44f1-4ce7-9dd0-7a6e99814857}</Project>
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-    </ProjectReference>
-    <ProjectReference Include="..\libresample\libresample.vcxproj">
-      <Project>{f00717f2-67c8-44e1-af00-541dfa9cb7f2}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\libscorealign\libscorealign.vcxproj">
@@ -1033,9 +1321,13 @@
   <ItemGroup>
     <CustomBuild Include="..\..\..\nyquist\nyquist-plot.txt">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Debug|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">copy /Y %(Identity) ..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='wx3-Release|Win32'">..\..\$(IntDir)\Nyquist\%(Filename)%(Extension)</Outputs>
     </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

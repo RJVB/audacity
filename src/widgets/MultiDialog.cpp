@@ -36,7 +36,8 @@ for each problem encountered, since there can be many orphans.
 class MultiDialog : public wxDialog
 {
 public:
-   MultiDialog(wxString message,
+   MultiDialog(wxWindow * pParent, 
+               wxString message,
                wxString title,
                const wxChar **buttons, wxString boxMsg, bool log);
    ~MultiDialog() {};
@@ -57,10 +58,11 @@ BEGIN_EVENT_TABLE(MultiDialog, wxDialog)
    EVT_BUTTON(ID_SHOW_LOG_BUTTON, MultiDialog::OnShowLog)
 END_EVENT_TABLE()
 
-MultiDialog::MultiDialog(wxString message,
+MultiDialog::MultiDialog(wxWindow * pParent,
+                         wxString message,
                          wxString title,
                          const wxChar **buttons, wxString boxMsg, bool log)
-   : wxDialog(NULL, (wxWindowID)-1, title,
+   : wxDialog(pParent, wxID_ANY, title,
                wxDefaultPosition, wxDefaultSize,
                wxCAPTION) // not wxDEFAULT_DIALOG_STYLE because we don't want wxCLOSE_BOX and wxSYSTEM_MENU
 {
@@ -140,11 +142,33 @@ void MultiDialog::OnShowLog(wxCommandEvent & WXUNUSED(event))
 
 
 int ShowMultiDialog(wxString message,
-                    wxString title,
-                    const wxChar **buttons, wxString boxMsg, bool log)
+   wxString title,
+   const wxChar **buttons, wxString boxMsg, bool log)
 {
-   MultiDialog dlog(message, title, buttons, boxMsg, log);
-   dlog.CentreOnParent();
+   wxWindow * pParent = wxGetApp().GetTopWindow();
+
+   // We want a parent we can display over, so don't make it a parent if top
+   // window is a STAY_ON_TOP.
+   if (pParent) {
+      if ((pParent->GetWindowStyle() & wxSTAY_ON_TOP) == wxSTAY_ON_TOP)
+         pParent = NULL;
+   }
+   MultiDialog dlog(pParent,
+      message, title, buttons, boxMsg, log);
+   // If dialog does not have a parent, cannot be centred on it.
+   if (pParent != NULL)
+      dlog.CentreOnParent();
+   else {
+      dlog.CenterOnScreen();
+      // and after centring move the dialog left by the size of the dialog.
+      // Likely to help if we have the splash screen visible, or if
+      // we're spanning two equally sized monitors.
+      // Unlikely to make things worse.
+      wxSize Size = dlog.GetSize();
+      Size.SetHeight( 10 );
+      wxPoint Pos = dlog.GetPosition() -Size;
+      dlog.Move(Pos);
+   }
    return dlog.ShowModal();
 }
 

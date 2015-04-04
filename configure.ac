@@ -41,7 +41,7 @@ AC_CONFIG_AUX_DIR([autotools])
 dnl we have some extra macros in m4/
 AC_CONFIG_MACRO_DIR([m4])
 
-AM_INIT_AUTOMAKE([dist-xz foreign no-dist-gzip subdir-objects -Wall -Wno-override])
+AM_INIT_AUTOMAKE([1.9 dist-xz foreign no-dist-gzip subdir-objects -Wall -Wno-override tar-ustar])
 AM_MAINTAINER_MODE([disable])
 
 AM_GNU_GETTEXT_VERSION([0.18])
@@ -184,11 +184,13 @@ AC_ARG_ENABLE(dynamic-loading,
             [dynamic_loading="$enableval"],
             [dynamic_loading="yes"])
 
-dnl AC_ARG_WITH(wx-version,
-dnl            [AS_HELP_STRING([--with-wx-version],
-dnl                            [select wxWidgets version (if both installed) [2.8,]])],
-dnl            wx_preference="--version=$withval",
-dnl            wx_preference="")
+AC_ARG_ENABLE(gtk3, [AS_HELP_STRING([--enable-gtk3],[enable use of GTK+-3.0 (default: use GTK+-2.0)])], enable_gtk3=$enableval, enable_gtk3=no)
+
+AC_ARG_WITH(wx-version,
+           [AS_HELP_STRING([--with-wx-version],
+                           [select wxWidgets version (if both installed) [2.8,]])],
+           wx_preference="--version=$withval",
+           wx_preference="")
 dnl At the moment we only support wx2.8. If we start supporting 3.0 when it
 dnl comes out, we'll want it back again.
 
@@ -292,7 +294,7 @@ wx_version=`${WX_CONFIG} $wxconfigargs --version`
 AC_MSG_NOTICE([Checking that the chosen version of wxWidgets is 2.8.x])
 
 case "${wx_version}" in
-  2.8.*)
+  2.8.* | 3.0.*)
     echo "Great, you're using wxWidgets ${wx_version}!"
     ;;
   *)
@@ -320,8 +322,11 @@ dnl Pull in library Cflags and so on for the non-optional libraries
 dnl All libraries in lib-src should build static libraries, but not shared ones.
 ac_configure_args="$ac_configure_args --enable-static=yes --enable-shared=no"
 
+dnl Include "external" headers
+CXXFLAGS="$CXXFLAGS -I\$(top_srcdir)/include"
+
 dnl Include FileDialog
-AC_CONFIG_SUBDIRS([lib-src/FileDialog])
+AC_CONFIG_SUBDIRS([lib-src/FileDialog lib-src/mod-nyq-bench])
 CXXFLAGS="$CXXFLAGS -I\$(top_srcdir)/lib-src/FileDialog"
 FILEDIALOG_LIBS='$(top_builddir)/lib-src/FileDialog/libFileDialog.la'
 AC_SUBST([FILEDIALOG_LIBS])
@@ -601,6 +606,8 @@ case "${host_os}" in
       dnl Unix configuration
       CONFIGHEADER="configunix.h"
 
+      AC_CHECK_HEADERS_ONCE(libudev.h)
+
       dnl On Unix we always use dlopen
       AC_SEARCH_LIBS([dlopen], [dl])
       if [[ "$ac_cv_search_dlopen" = no ]]; then
@@ -608,17 +615,22 @@ case "${host_os}" in
       fi
 
       AC_SUBST(HAVE_GTK)
-      PKG_CHECK_MODULES(GTK, gtk+-2.0, have_gtk=yes, have_gtk=no)
+      if [[ "$enable_gtk3" = yes ]]; then
+         PKG_CHECK_MODULES(GTK, gtk+-3.0, have_gtk=yes, have_gtk=no)
+      else
+         PKG_CHECK_MODULES(GTK, gtk+-2.0, have_gtk=yes, have_gtk=no)
+      fi
+      PKG_CHECK_MODULES(GTK, $gtk_version, have_gtk=yes, have_gtk=no)
       if [[ "$have_gtk" = "yes" ]]
       then
          AC_DEFINE(HAVE_GTK, 1, [Define if GTK is available])
          CPPFLAGS="$CPPFLAGS $GTK_CFLAGS"
          LIBS="$LIBS $GTK_LIBS"
       fi
-
-	  dnl VST support on platforms other than Mac OS and Windows not enabled for
-	  dnl 2.0.6 release
-	  use_vst="no"
+      
+      dnl VST support on platforms other than Mac OS and Windows not enabled for
+      dnl 2.0.6 release
+	   dnl use_vst="no"
    ;;
 esac
 
@@ -647,6 +659,9 @@ case "${host_os}" in
       AC_CHECK_LIB(rt, clock_gettime, [rt_libs=" -lrt"])
       LIBS="${LIBS}${rt_libs}"
       AC_CHECK_FUNCS([clock_gettime nanosleep])
+
+      AC_CHECK_LIB(udev, udev_new, [udev_libs=" -ludev"])
+      LIBS="${LIBS}${udev_libs}"
       ;;
 esac
 
@@ -725,6 +740,30 @@ AC_OUTPUT
 echo ""
 echo "Finished configure:"
 
+# When building from a temporary directory and not the top level directory,
+# the locale files get copied and the Makefile.in.in adjusted.  Otherwise,
+# the generated locale files will be placed in the top level "po" directory.
+#
+# The temporary Makefile.in.in is updated so we don't have to worry about
+# committing changes that might get lost when regenerating config files.
+if [[ ! -e "${ac_abs_top_builddir}/po/LINGUAS" ]]
+then
+   pushd >/dev/null "${ac_abs_top_builddir}/po/"
+   if [[ "${ac_abs_top_builddir}" != "${ac_abs_top_srcdir}" ]]
+   then
+      cp -pr "${ac_abs_top_srcdir}/po/." .
+      sed -e "s/@srcdir@/./" "${ac_abs_top_srcdir}/po/Makefile.in.in" >"Makefile.in.in"
+   fi
+
+   for lang in $(cat "${ac_abs_top_srcdir}/po/LINGUAS")
+   do
+      mkdir -p "${lang}/LC_MESSAGES"
+      pushd >/dev/null "${lang}/LC_MESSAGES"
+      ln -s "../../${lang}.gmo" "audacity.mo"
+      popd >/dev/null
+   done
+   popd >/dev/null
+fi
 
 for lib in $LIBRARIES ; do
    eval LIB_USE_LOCAL=\$${lib}_USE_LOCAL

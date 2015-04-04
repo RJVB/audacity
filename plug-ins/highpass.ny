@@ -1,9 +1,12 @@
 ;nyquist plug-in
 ;version 3
 ;type process
+;preview enabled
 ;categories "http://lv2plug.in/ns/lv2core#HighpassPlugin"
 ;name "High Pass Filter..."
 ;action "Performing High Pass Filter..."
+;author "Dominic Mazzoni"
+;copyright "Released under terms of the GNU General Public License version 2"
 
 ;; highpass.ny by Dominic Mazzoni
 ;; Modified by David R. Sky
@@ -11,7 +14,7 @@
 ;; Released under terms of the GNU General Public License version 2:
 ;; http://www.gnu.org/licenses/old-licenses/gpl-2.0.html .
 
-;; To enable the Q control, remove one semicolon from the start of lines 18 and 32
+;; To enable the Q control, remove one semicolon from the start of lines 20 and 34
 
 ;control rolloff "Rolloff (dB per octave)" choice "  6 dB,12 dB,24 dB,36 dB,48 dB" 0
 ;;control q "Filter quality (Q) for 12 dB rolloff" real "" 0.7071 .1 20

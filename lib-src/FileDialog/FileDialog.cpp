@@ -16,6 +16,24 @@ custom controls.
 
 #include "FileDialog.h"
 
+/////////////////////////////////////////////////////////////////////////////
+// Name:        common/fldlgcmn.cpp
+// Purpose:     wxFileDialog common functions
+// Author:      John Labenski
+// Modified by: Leland Lucius
+// Created:     14.06.03 (extracted from src/*/filedlg.cpp)
+// RCS-ID:      $Id: FileDialog.cpp,v 1.8 2008-10-05 14:48:59 richardash1981 Exp $
+// Copyright:   (c) Robert Roebling
+// Licence:     wxWindows licence
+//
+// Modified for Audacity to support an additional button on Save dialogs
+//
+/////////////////////////////////////////////////////////////////////////////
+
+DEFINE_EVENT_TYPE(EVT_FILEDIALOG_SELECTION_CHANGED);
+DEFINE_EVENT_TYPE(EVT_FILEDIALOG_FILTER_CHANGED);
+DEFINE_EVENT_TYPE(EVT_FILEDIALOG_ADD_CONTROLS);
+
 void FileDialog::EnableButton(wxString label, fdCallback cb, void *data)
 {
    m_buttonlabel = label;
@@ -31,34 +49,19 @@ void FileDialog::ClickButton(int index)
    }
 }
 
-/////////////////////////////////////////////////////////////////////////////
-// Name:        common/fldlgcmn.cpp
-// Purpose:     wxFileDialog common functions
-// Author:      John Labenski
-// Modified by: Leland Lucius
-// Created:     14.06.03 (extracted from src/*/filedlg.cpp)
-// RCS-ID:      $Id: FileDialog.cpp,v 1.8 2008-10-05 14:48:59 richardash1981 Exp $
-// Copyright:   (c) Robert Roebling
-// Licence:     wxWindows licence
-//
-// Modified for Audacity to support an additional button on Save dialogs
-//
-/////////////////////////////////////////////////////////////////////////////
-
 //----------------------------------------------------------------------------
 // FileDialog convenience functions
 //----------------------------------------------------------------------------
 
-wxString FileSelector(const wxChar *title,
-                      const wxChar *defaultDir,
-                      const wxChar *defaultFileName,
-                      const wxChar *defaultExtension,
-                      const wxChar *filter,
+wxString FileSelector(const wxString & title,
+                      const wxString & defaultDir,
+                      const wxString & defaultFileName,
+                      const wxString & defaultExtension,
+                      const wxString & filter,
                       int flags,
-                      wxWindow *parent,
-                      wxString label, fdCallback cb, void *cbdata)
+                      wxWindow *parent)
 {
-   // The defaultExtension, if non-NULL, is
+   // The defaultExtension, if non-empty, is
    // appended to the filename if the user fails to type an extension. The new
    // implementation (taken from wxFileSelectorEx) appends the extension
    // automatically, by looking at the filter specification. In fact this
@@ -70,31 +73,17 @@ wxString FileSelector(const wxChar *title,
    // suitable filter.
 
    wxString filter2;
-   if (defaultExtension && !filter)
+   if (!defaultExtension.empty() && filter.empty())
       filter2 = wxString(wxT("*.")) + defaultExtension;
-   else if (filter)
+   else if (!filter.empty())
       filter2 = filter;
 
-   wxString defaultDirString;
-   if (defaultDir)
-      defaultDirString = defaultDir;
-
-   wxString defaultFilenameString;
-   if (defaultFileName)
-      defaultFilenameString = defaultFileName;
-
-   FileDialog fileDialog(parent, title, defaultDirString,
-                         defaultFilenameString, filter2,
+   FileDialog fileDialog(parent, title, defaultDir,
+                         defaultFileName, filter2,
                          flags);
 
-   // Enable the extra button if desired
-   if ((flags & wxFD_SAVE) && (cb != NULL))
-   {
-      fileDialog.EnableButton(label, cb, cbdata);
-   }
-
    // if filter is of form "All files (*)|*|..." set correct filter index
-   if ((wxStrlen(defaultExtension) != 0) && (filter2.Find(wxT('|')) != wxNOT_FOUND))
+   if (!defaultExtension.empty() && filter2.find(wxT('|')) != wxString::npos)
    {
       int filterIndex = 0;
       

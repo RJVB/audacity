@@ -61,6 +61,12 @@
     <Filter Include="src/effects/lv2">
       <UniqueIdentifier>{cfbc5496-9828-4c04-8e02-35a5e81cf092}</UniqueIdentifier>
     </Filter>
+    <Filter Include="includes">
+      <UniqueIdentifier>{ce332b42-4385-473c-ad9c-f385ea2e6c73}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="includes\audacity">
+      <UniqueIdentifier>{2bfa6793-371a-4d2e-b3f4-fb033a0c5729}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\AboutDialog.cpp">
@@ -163,9 +169,6 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\src\Legacy.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\src\LoadModules.cpp">
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\src\Lyrics.cpp">
@@ -370,9 +373,6 @@
       <Filter>src/effects</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\src\effects\Paulstretch.cpp">
-      <Filter>src/effects</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\src\effects\Phaser.cpp">
       <Filter>src/effects</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\src\effects\Repair.cpp">
@@ -603,9 +603,6 @@
     <ClCompile Include="..\..\..\src\widgets\Ruler.cpp">
       <Filter>src/widgets</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\src\widgets\TimeTextCtrl.cpp">
-      <Filter>src/widgets</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\src\widgets\valnum.cpp">
       <Filter>src/widgets</Filter>
     </ClCompile>
@@ -726,9 +723,6 @@
     <ClCompile Include="..\..\..\src\effects\ladspa\LadspaEffect.cpp">
       <Filter>src/effects/ladspa</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\src\effects\ladspa\LoadLadspa.cpp">
-      <Filter>src/effects/ladspa</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\src\toolbars\ControlToolBar.cpp">
       <Filter>src/toolbars</Filter>
     </ClCompile>
@@ -821,6 +815,27 @@
     </ClCompile>
     <ClCompile Include="..\..\..\src\import\MultiFormatReader.cpp">
       <Filter>src/import</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\ModuleManager.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\effects\EffectRack.cpp">
+      <Filter>src/effects</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\toolbars\SpectralSelectionBar.cpp">
+      <Filter>src/toolbars</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\widgets\NumericTextCtrl.cpp">
+      <Filter>src/widgets</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\effects\Phaser.cpp">
+      <Filter>src/effects</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\effects\NoiseReduction.cpp">
+      <Filter>src/effects</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\DeviceChange.cpp">
+      <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -933,9 +948,6 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\Legacy.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\src\LoadModules.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\Lyrics.h">
@@ -1146,9 +1158,6 @@
       <Filter>src/effects</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\effects\Paulstretch.h">
-      <Filter>src/effects</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\src\effects\Phaser.h">
       <Filter>src/effects</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\effects\Repair.h">
@@ -1385,9 +1394,6 @@
     <ClInclude Include="..\..\..\src\widgets\Ruler.h">
       <Filter>src/widgets</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\src\widgets\TimeTextCtrl.h">
-      <Filter>src/widgets</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\src\widgets\valnum.h">
       <Filter>src/widgets</Filter>
     </ClInclude>
@@ -1520,9 +1526,6 @@
     <ClInclude Include="..\..\..\src\effects\ladspa\LadspaEffect.h">
       <Filter>src/effects/ladspa</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\src\effects\ladspa\LoadLadspa.h">
-      <Filter>src/effects/ladspa</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\src\toolbars\ControlToolBar.h">
       <Filter>src/toolbars</Filter>
     </ClInclude>
@@ -1615,6 +1618,57 @@
     </ClInclude>
     <ClInclude Include="..\..\..\src\import\MultiFormatReader.h">
       <Filter>src/import</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\audacity\ConfigInterface.h">
+      <Filter>includes\audacity</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\audacity\EffectInterface.h">
+      <Filter>includes\audacity</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\audacity\IdentInterface.h">
+      <Filter>includes\audacity</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\audacity\ImporterInterface.h">
+      <Filter>includes\audacity</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\audacity\ModuleInterface.h">
+      <Filter>includes\audacity</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\audacity\PluginInterface.h">
+      <Filter>includes\audacity</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\audacity\Types.h">
+      <Filter>includes\audacity</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\ModuleManager.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\effects\EffectRack.h">
+      <Filter>src/effects</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\toolbars\SpectralSelectionBar.h">
+      <Filter>src/toolbars</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\toolbars\SpectralSelectionBarListener.h">
+      <Filter>src/toolbars</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\widgets\NumericTextCtrl.h">
+      <Filter>src/widgets</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\audacity\EffectAutomationParameters.h">
+      <Filter>includes\audacity</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\effects\Phaser.h">
+      <Filter>src/effects</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\effects\NoiseReduction.h">
+      <Filter>src/effects</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\DeviceChange.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AudioIOListener.h">
+      <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -1743,6 +1797,9 @@
     <CustomBuild Include="..\..\..\nyquist\stk.lsp">
       <Filter>nyquist</Filter>
     </CustomBuild>
+    <CustomBuild Include="..\..\..\lib-src\libnyquist\nyquist\sys\win\msvc\system.lsp">
+      <Filter>nyquist</Filter>
+    </CustomBuild>
     <CustomBuild Include="..\..\..\nyquist\xlinit.lsp">
       <Filter>nyquist</Filter>
     </CustomBuild>
@@ -1761,12 +1818,6 @@
       <Filter>plug-ins</Filter>
     </copy>
     <copy Include="..\..\..\plug-ins\clipfix.ny">
-      <Filter>plug-ins</Filter>
-    </copy>
-    <copy Include="..\..\..\plug-ins\crossfadein.ny">
-      <Filter>plug-ins</Filter>
-    </copy>
-    <copy Include="..\..\..\plug-ins\crossfadeout.ny">
       <Filter>plug-ins</Filter>
     </copy>
     <copy Include="..\..\..\plug-ins\delay.ny">
@@ -1809,6 +1860,18 @@
       <Filter>plug-ins</Filter>
     </copy>
     <copy Include="..\..\..\plug-ins\vocoder.ny">
+      <Filter>plug-ins</Filter>
+    </copy>
+    <copy Include="..\..\..\plug-ins\crossfadetracks.ny">
+      <Filter>plug-ins</Filter>
+    </copy>
+    <copy Include="..\..\..\plug-ins\SpectralEditMulti.ny">
+      <Filter>plug-ins</Filter>
+    </copy>
+    <copy Include="..\..\..\plug-ins\SpectralEditParametricEQ.ny">
+      <Filter>plug-ins</Filter>
+    </copy>
+    <copy Include="..\..\..\plug-ins\SpectralEditShelves.ny">
       <Filter>plug-ins</Filter>
     </copy>
   </ItemGroup>

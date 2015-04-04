@@ -675,6 +675,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\..\..\src\SelectedRegion.h"
+				>
+			</File>
+			<File
 				RelativePath="..\..\..\src\Sequence.cpp"
 				>
 			</File>
@@ -833,7 +837,7 @@
 				>
 			</File>
 			<File
-				RelativePath="..\..\..\src\TrackPanelAx.h"
+				RelativePath="..\..\..\src\TrackPanelListener.h"
 				>
 			</File>
 			<File
@@ -2544,6 +2548,10 @@
 			</File>
 			<File
 				RelativePath="..\..\..\nyquist\sndfnint.lsp"
+				>
+			</File>
+			<File
+				RelativePath="..\..\..\lib-src\libnyquist\nyquist\sys\win\msvc\system.lsp"
 				>
 			</File>
 			<File

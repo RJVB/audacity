@@ -26,12 +26,12 @@ class GridAx;
 
 #endif
 
-class TimeTextCtrl;
+class NumericTextCtrl;
 
 // ----------------------------------------------------------------------------
 // TimeEditor
 //
-// wxGridCellEditor for the TimeTextCtrl.
+// wxGridCellEditor for the NumericTextCtrl.
 // ----------------------------------------------------------------------------
 #define GRID_VALUE_TIME wxT("Time")
 
@@ -52,7 +52,12 @@ class TimeEditor:public wxGridCellEditor
    void SetSize(const wxRect &rect);
 
    void BeginEdit(int row, int col, wxGrid *grid);
+
    bool EndEdit(int row, int col, wxGrid *grid);
+
+   bool EndEdit(int row, int col, const wxGrid *grid, const wxString &oldval, wxString *newval);
+
+   void ApplyEdit(int row, int col, wxGrid *grid);
 
    void Reset();
 
@@ -64,19 +69,21 @@ class TimeEditor:public wxGridCellEditor
    wxGridCellEditor *Clone() const;
    wxString GetValue() const;
 
-   TimeTextCtrl *GetTimeCtrl() const { return (TimeTextCtrl *)m_control; };
+   NumericTextCtrl *GetTimeCtrl() const { return (NumericTextCtrl *)m_control; }
 
  private:
 
    wxString mFormat;
    double mRate;
    double mOld;
+   wxString mOldString;
+   wxString mValueAsString;
 };
 
 // ----------------------------------------------------------------------------
 // TimeRenderer
 //
-// wxGridCellRenderer for the TimeTextCtrl.
+// wxGridCellRenderer for the NumericTextCtrl.
 // ----------------------------------------------------------------------------
 
 class TimeRenderer : public wxGridCellRenderer
@@ -124,7 +131,12 @@ public:
    void SetSize(const wxRect &rect);
 
    void BeginEdit(int row, int col, wxGrid *grid);
+
    bool EndEdit(int row, int col, wxGrid *grid);
+
+   bool EndEdit(int row, int col, const wxGrid *grid, const wxString &oldval, wxString *newval);
+
+   void ApplyEdit(int row, int col, wxGrid *grid);
 
    void Reset();
 
@@ -159,6 +171,7 @@ public:
 
    wxArrayString mChoices;
    wxString mOld;
+   wxString mValueAsString;
 };
 
 // ----------------------------------------------------------------------------

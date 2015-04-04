@@ -30,6 +30,9 @@
 #include "Invert.h"
 #include "Leveller.h"
 #include "Noise.h"
+#ifdef EXPERIMENTAL_NOISE_REDUCTION
+#include "NoiseReduction.h"
+#endif
 #include "NoiseRemoval.h"
 #include "Normalize.h"
 #include "Phaser.h"
@@ -53,31 +56,6 @@
 #include "ChangePitch.h"
 #include "ChangeTempo.h"
 #endif
-
-#ifdef USE_NYQUIST
-#include "nyquist/LoadNyquist.h"
-#endif
-
-#ifdef USE_AUDIO_UNITS
-#include "audiounits/LoadAudioUnits.h"
-#endif
-
-#ifdef USE_VST
-#include "VST/VSTEffect.h"
-#endif
-
-#ifdef USE_LADSPA
-#include "ladspa/LoadLadspa.h"
-#endif
-
-#ifdef USE_LV2
-#include "lv2/LoadLV2.h"
-#endif
-
-#ifdef USE_VAMP
-#include "vamp/LoadVamp.h"
-#endif
-
 
 void LoadEffects()
 {
@@ -200,8 +178,13 @@ void LoadEffects()
 
 #define ATEAM "http://audacityteam.org/namespace#"
 
+#ifdef EXPERIMENTAL_NOISE_REDUCTION
+   CatPtr nrm = em.AddCategory(wxT(ATEAM) wxT("NoiseReduction"),
+      _("Noise Reduction"));
+#else
    CatPtr nrm = em.AddCategory(wxT(ATEAM) wxT("NoiseRemoval"),
-                               _("Noise Removal"));
+      _("Noise Removal"));
+#endif
    CatPtr pnt = em.AddCategory(wxT(ATEAM) wxT("PitchAndTempo"),
                                _("Pitch and Tempo"));
    CatPtr tim = em.AddCategory(wxT(ATEAM) wxT("TimelineChanger"),
@@ -257,7 +240,11 @@ void LoadEffects()
    em.RegisterEffect(new EffectFadeOut(), SIMPLE_EFFECT);
    em.RegisterEffect(new EffectInvert());
    em.RegisterEffect(new EffectLeveller(), SIMPLE_EFFECT);
+#ifdef EXPERIMENTAL_NOISE_REDUCTION
+   em.RegisterEffect(new EffectNoiseReduction(), SIMPLE_EFFECT);
+#else
    em.RegisterEffect(new EffectNoiseRemoval(), SIMPLE_EFFECT);
+#endif
    em.RegisterEffect(new EffectNormalize(), SIMPLE_EFFECT);
    em.RegisterEffect(new EffectPhaser());
    em.RegisterEffect(new EffectRepair());
@@ -276,59 +263,10 @@ void LoadEffects()
 
    // Analyze menu
    em.RegisterEffect(new EffectFindClipping());
-
-#ifdef USE_NYQUIST
-   if (gPrefs->Read(wxT("/Nyquist/Enable"), true)) {
-      LoadNyquistPlugins();
-   }
-#endif
-
-#ifdef USE_LADSPA
-   if (gPrefs->Read(wxT("/Ladspa/Enable"), true)) {
-      LoadLadspaPlugins();
-   }
-#endif
-
-#ifdef USE_VST
-   if (gPrefs->Read(wxT("/VST/Enable"), true)) {
-      RegisterVSTEffects();
-   }
-#endif
-
-#ifdef USE_LV2
-   if (gPrefs->Read(wxT("/LV2/Enable"), true)) {
-      LoadLV2Plugins();
-   }
-#endif
-
-#ifdef USE_AUDIO_UNITS
-   if (gPrefs->Read(wxT("/AudioUnits/Enable"), true)) {
-      LoadAudioUnits();
-   }
-#endif
-
-#ifdef USE_VAMP
-   if (gPrefs->Read(wxT("/VAMP/Enable"), true)) {
-      LoadVampPlugins();
-   }
-#endif
-
 }
 
 void UnloadEffects()
 {
    EffectManager::Get().UnregisterEffects();
-
-#ifdef USE_LADSPA
-   UnloadLadspaPlugins();
-#endif
-
-#ifdef USE_LV2
-   UnloadLV2Plugins();
-#endif
-
-#ifdef USE_VAMP
-   UnloadVampPlugins();
-#endif
 }
 

@@ -11,22 +11,26 @@
 #ifndef __AUDACITY_TRACK_PANEL__
 #define __AUDACITY_TRACK_PANEL__
 
+#include <memory>
+
 #include <wx/dcmemory.h>
 #include <wx/dynarray.h>
 #include <wx/panel.h>
 #include <wx/timer.h>
 #include <wx/window.h>
 
-#include "LabelTrack.h"
+#include "Experimental.h"
 #include "Sequence.h"  //Stm: included for the sampleCount declaration
 #include "WaveClip.h"
 #include "WaveTrack.h"
 #include "UndoManager.h" //JKC: Included for PUSH_XXX definitions.
-#include "widgets/TimeTextCtrl.h"
+#include "widgets/NumericTextCtrl.h"
 
 class wxMenu;
 class wxRect;
 
+class LabelTrack;
+class SpectrumAnalyst;
 class TrackPanel;
 class TrackArtist;
 class Ruler;
@@ -54,31 +58,8 @@ class AUDACITY_DLL_API TrackClip
 
 WX_DECLARE_OBJARRAY(TrackClip, TrackClipArray);
 
-class AUDACITY_DLL_API TrackPanelListener {
-
- public:
-   TrackPanelListener(){};
-   virtual ~TrackPanelListener(){};
-
-   virtual void TP_DisplaySelection() = 0;
-   virtual void TP_DisplayStatusMessage(wxString msg) = 0;
-
-   virtual int TP_GetCurrentTool() = 0;
-   virtual ToolsToolBar * TP_GetToolsToolBar() = 0;
-   virtual ControlToolBar * TP_GetControlToolBar() = 0;
-
-   virtual void TP_OnPlayKey() = 0;
-   virtual void TP_PushState(wxString shortDesc, wxString longDesc,
-                            int flags = PUSH_AUTOSAVE | PUSH_CALC_SPACE) = 0;
-   virtual void TP_ModifyState(bool bWantsAutoSave) = 0;    // if true, writes auto-save file. Should set only if you really want the state change restored after
-                                                            // a crash, as it can take many seconds for large (eg. 10 track-hours) projects
-   virtual void TP_RedrawScrollbars() = 0;
-   virtual void TP_ScrollLeft() = 0;
-   virtual void TP_ScrollRight() = 0;
-   virtual void TP_ScrollWindow(double scrollto) = 0;
-   virtual void TP_ScrollUpDown(int delta) = 0;
-   virtual void TP_HandleResize() = 0;
-};
+// Declared elsewhere, to reduce compilation dependencies
+class TrackPanelListener;
 
 //
 // TrackInfo sliders: we keep a pool of sliders, and attach them to tracks as
@@ -329,11 +310,39 @@ class AUDACITY_DLL_API TrackPanel:public wxPanel {
    // AS: Selection handling
    virtual void HandleSelect(wxMouseEvent & event);
    virtual void SelectionHandleDrag(wxMouseEvent &event, Track *pTrack);
+   void StartOrJumpPlayback(wxMouseEvent &event);
+#ifdef EXPERIMENTAL_SCRUBBING
+   void StartScrubbing(double position);
+#endif
    virtual void SelectionHandleClick(wxMouseEvent &event,
                                      Track* pTrack, wxRect r);
    virtual void StartSelection (int mouseXCoordinate, int trackLeftEdge);
    virtual void ExtendSelection(int mouseXCoordinate, int trackLeftEdge,
                         Track *pTrack);
+   virtual void UpdateSelectionDisplay();
+
+   // Handle small cursor and play head movements
+   void SeekLeftOrRight
+      (bool left, bool shift, bool ctrl, bool keyup,
+      int snapToTime, bool mayAccelerateQuiet, bool mayAccelerateAudio,
+      double quietSeekStepPositive, double audioSeekStepPositive);
+
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+public:
+   void SnapCenterOnce (WaveTrack *pTrack, bool up);
+protected:
+   void StartSnappingFreqSelection (WaveTrack *pTrack);
+   void MoveSnappingFreqSelection (int mouseYCoordinate,
+                                   int trackTopEdge,
+                                   int trackHeight, Track *pTrack);
+   void StartFreqSelection (int mouseYCoordinate, int trackTopEdge,
+                            int trackHeight, Track *pTrack);
+   void ExtendFreqSelection(int mouseYCoordinate, int trackTopEdge,
+                            int trackHeight);
+   void ResetFreqSelectionPin(double hintFrequency, bool logF);
+
+#endif
+
    virtual void SelectTracksByLabel( LabelTrack *t );
    virtual void SelectTrackLength(Track *t);
 
@@ -345,9 +354,11 @@ class AUDACITY_DLL_API TrackPanel:public wxPanel {
    virtual void SetCursorAndTipWhenInLabel( Track * t, wxMouseEvent &event, const wxChar ** ppTip );
    virtual void SetCursorAndTipWhenInVResizeArea( Track * label, bool blinked, const wxChar ** ppTip );
    virtual void SetCursorAndTipWhenInLabelTrack( LabelTrack * pLT, wxMouseEvent & event, const wxChar ** ppTip );
-   virtual void SetCursorAndTipWhenSelectTool( Track * t, wxMouseEvent & event, wxRect &r, bool bMultiToolMode, const wxChar ** ppTip );
+   virtual void SetCursorAndTipWhenSelectTool
+      ( Track * t, wxMouseEvent & event, wxRect &r, bool bMultiToolMode, const wxChar ** ppTip, const wxCursor ** ppCursor );
    virtual void SetCursorAndTipByTool( int tool, wxMouseEvent & event, const wxChar **ppTip );
    virtual void HandleCursor(wxMouseEvent & event);
+   virtual void MaySetOnDemandTip( Track * t, const wxChar ** ppTip );
 
    // AS: Envelope editing handlers
    virtual void HandleEnvelope(wxMouseEvent & event);
@@ -561,7 +572,40 @@ protected:
 
    wxLongLong mLastSelectionAdjustment;
 
+   bool mSelStartValid;
    double mSelStart;
+
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   enum eFreqSelMode {
+      FREQ_SEL_INVALID,
+
+      FREQ_SEL_SNAPPING_CENTER,
+      FREQ_SEL_PINNED_CENTER,
+      FREQ_SEL_DRAG_CENTER,
+
+      FREQ_SEL_FREE,
+      FREQ_SEL_TOP_FREE,
+      FREQ_SEL_BOTTOM_FREE,
+   }  mFreqSelMode;
+   // Following holds:
+   // the center for FREQ_SEL_PINNED_CENTER,
+   // the ratio of top to center (== center to bottom) for FREQ_SEL_DRAG_CENTER,
+   // a frequency boundary for FREQ_SEL_FREE, FREQ_SEL_TOP_FREE, or
+   // FREQ_SEL_BOTTOM_FREE,
+   // and is ignored otherwise.
+   double mFreqSelPin;
+   const WaveTrack *mFreqSelTrack;
+   std::auto_ptr<SpectrumAnalyst> mFrequencySnapper;
+
+   // For toggling of spectral seletion
+   double mLastF0;
+   double mLastF1;
+
+public:
+   void ToggleSpectralSelection();
+protected:
+
+#endif
 
    Track *mCapturedTrack;
    Envelope *mCapturedEnvelope;
@@ -614,7 +658,7 @@ protected:
    wxInt64 mSnapRight;
    bool mSnapPreferRightEdge;
 
-   TimeConverter mConverter;
+   NumericConverter mConverter;
 
    Track * mDrawingTrack;          // Keeps track of which track you are drawing on between events cf. HandleDraw()
    int mDrawingTrackTop;           // Keeps track of the top position of the drawing track.
@@ -623,10 +667,49 @@ protected:
    sampleCount mDrawingLastDragSample; // sample of last drag-over
    float mDrawingLastDragSampleValue;  // value of last drag-over
 
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   void HandleCenterFrequencyCursor
+      (bool shiftDown, const wxChar ** ppTip, const wxCursor ** ppCursor);
+
+   void HandleCenterFrequencyClick
+      (bool shiftDown, Track *pTrack, double value);
+#endif
+
    double PositionToTime(wxInt64 mouseXCoordinate,
                          wxInt64 trackLeftEdge) const;
    wxInt64 TimeToPosition(double time,
                           wxInt64 trackLeftEdge) const;
+
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   double PositionToFrequency(bool maySnap,
+                              wxInt64 mouseYCoordinate,
+                              wxInt64 trackTopEdge,
+                              int trackHeight,
+                              double rate,
+                              bool logF) const;
+   wxInt64 FrequencyToPosition(double frequency,
+                               wxInt64 trackTopEdge,
+                               int trackHeight,
+                               double rate,
+                               bool logF) const;
+#endif
+
+   enum SelectionBoundary {
+      SBNone,
+      SBLeft, SBRight,
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+      SBBottom, SBTop, SBCenter, SBWidth,
+#endif
+   };
+   SelectionBoundary ChooseTimeBoundary
+      (double selend, bool onlyWithinSnapDistance,
+       wxInt64 *pPixelDist = NULL, double *pPinValue = NULL) const;
+   SelectionBoundary ChooseBoundary
+      (wxMouseEvent & event, const Track *pTrack,
+       const wxRect &rect,
+       bool mayDragWidth,
+       bool onlyWithinSnapDistance,
+       double *pPinValue = NULL) const;
 
    int mInitialTrackHeight;
    int mInitialUpperTrackHeight;
@@ -672,12 +755,19 @@ protected:
    int mMoveUpThreshold;
    int mMoveDownThreshold;
 
+#ifdef EXPERIMENTAL_SCRUBBING
+   bool mScrubbing;
+   wxLongLong mLastScrubTime; // milliseconds
+   double mLastScrubPosition;
+#endif
+
    wxCursor *mArrowCursor;
    wxCursor *mPencilCursor;
    wxCursor *mSelectCursor;
    wxCursor *mResizeCursor;
    wxCursor *mSlideCursor;
-   wxCursor *mEnvelopeCursor;
+   wxCursor *mEnvelopeCursor; // doubles as the center frequency cursor
+                              // for spectral selection
    wxCursor *mSmoothCursor;
    wxCursor *mZoomInCursor;
    wxCursor *mZoomOutCursor;
@@ -687,6 +777,11 @@ protected:
    wxCursor *mDisabledCursor;
    wxCursor *mAdjustLeftSelectionCursor;
    wxCursor *mAdjustRightSelectionCursor;
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   wxCursor *mBottomFrequencyCursor;
+   wxCursor *mTopFrequencyCursor;
+   wxCursor *mBandWidthCursor;
+#endif
 #if USE_MIDI
    wxCursor *mStretchCursor;
    wxCursor *mStretchLeftCursor;
@@ -734,6 +829,8 @@ protected:
 
 //This constant determines the size of the horizontal region (in pixels) around
 //the right and left selection bounds that can be used for horizontal selection adjusting
+//(or, vertical distance around top and bottom bounds in spectrograms,
+// for vertical selection adjusting)
 #define SELECTION_RESIZE_REGION 3
 
 #define SMOOTHING_KERNEL_RADIUS 3

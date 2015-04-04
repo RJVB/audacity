@@ -41,8 +41,8 @@ Command *CompareAudioCommandType::Create(CommandOutputTarget *target)
 bool CompareAudioCommand::GetSelection(AudacityProject &proj)
 {
    // Get the selected time interval
-   mT0 = proj.mViewInfo.sel0;
-   mT1 = proj.mViewInfo.sel1;
+   mT0 = proj.mViewInfo.selectedRegion.t0();
+   mT1 = proj.mViewInfo.selectedRegion.t1();
    if (mT0 >= mT1)
    {
       Error(wxT("There is no selection!"));
@@ -135,8 +135,8 @@ bool CompareAudioCommand::Apply(CommandExecutionContext context)
 
    // Output the results
    double errorSeconds = mTrack0->LongSamplesToTime(errorCount);
-   Status(wxString::Format(wxT("%i"), errorCount));
+   Status(wxString::Format(wxT("%li"), errorCount));
    Status(wxString::Format(wxT("%.4f"), errorSeconds));
-   Status(wxString::Format(wxT("Finished comparison: %i samples (%.3f seconds) exceeded the error threshold of %f."), errorCount, errorSeconds, errorThreshold));
+   Status(wxString::Format(wxT("Finished comparison: %li samples (%.3f seconds) exceeded the error threshold of %f."), errorCount, errorSeconds, errorThreshold));
    return true;
 }

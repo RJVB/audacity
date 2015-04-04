@@ -570,14 +570,14 @@ void AColor::DarkMIDIChannel(wxDC * dc, int channel /* 1 - 16 */ )
 
 bool AColor::gradient_inited = 0;
 
-unsigned char AColor::gradient_pre[2][2][gradientSteps][3];
+unsigned char AColor::gradient_pre[ColorGradientTotal][2][gradientSteps][3];
 
 void AColor::PreComputeGradient() {
    {
       if (!gradient_inited) {
          gradient_inited = 1;
 
-         for (int selected = 0; selected <= 1; selected++)
+         for (int selected = 0; selected < ColorGradientTotal; selected++)
             for (int grayscale = 0; grayscale <= 1; grayscale++) {
                float r, g, b;
 
@@ -608,10 +608,37 @@ void AColor::PreComputeGradient() {
                      b = (gradient[left][2] * lweight) + (gradient[right][2] * rweight);
                   }
 
-                  if (selected) {
-                     r *= 0.77f;
-                     g *= 0.77f;
-                     b *= 0.885f;
+                  switch (selected) {
+                  case ColorGradientUnselected:
+                     // not dimmed
+                     break;
+
+                  case ColorGradientTimeAndFrequencySelected:
+                     if( !grayscale )
+                     {
+                        // flip the blue, makes spectrogram more yellow.
+                        b = 1.0f - 0.75f * b;
+                        break;
+                     }
+                     // else fall through to SAME grayscale colour as normal selection.
+                     // The white lines show it up clearly enough.
+
+                  case ColorGradientTimeSelected:
+                     // partly dimmed
+                     r *= 0.75f;
+                     g *= 0.75f;
+                     b *= 0.75f;
+                     break;
+
+
+                  // For now edge colour is just black (or white if grey-scale)
+                  // Later we might invert or something else funky.
+                  case ColorGradientEdge:
+                     // fully dimmed
+                     r = 1.0f * grayscale;
+                     g = 1.0f * grayscale;
+                     b = 1.0f * grayscale;
+                     break;
                   }
                   gradient_pre[selected][grayscale][i][0] = (unsigned char) (255 * r);
                   gradient_pre[selected][grayscale][i][1] = (unsigned char) (255 * g);

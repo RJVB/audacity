@@ -22,7 +22,15 @@ custom controls.
 
 typedef void (*fdCallback)(void *, int);
 
-#include "FileDialogPrivate.h"
+#if defined(__WXGTK__)
+#include "gtk/FileDialogPrivate.h"
+#elif defined(__WXMAC__)
+#include "mac/FileDialogPrivate.h"
+#elif defined(__WXMSW__)
+#include "win/FileDialogPrivate.h"
+#else
+#error Unknown implementation
+#endif
 
 /////////////////////////////////////////////////////////////////////////////
 // Name:        filedlg.h
@@ -38,21 +46,22 @@ typedef void (*fdCallback)(void *, int);
 //
 /////////////////////////////////////////////////////////////////////////////
 
+DECLARE_EVENT_TYPE(EVT_FILEDIALOG_SELECTION_CHANGED, -1);
+DECLARE_EVENT_TYPE(EVT_FILEDIALOG_FILTER_CHANGED, -1);
+DECLARE_EVENT_TYPE(EVT_FILEDIALOG_ADD_CONTROLS, -1);
+
 //----------------------------------------------------------------------------
 // wxFileDialog convenience functions
 //----------------------------------------------------------------------------
 
 wxString 
-FileSelector(const wxChar *message = wxFileSelectorPromptStr,
-             const wxChar *default_path = NULL,
-             const wxChar *default_filename = NULL,
-             const wxChar *default_extension = NULL,
-             const wxChar *wildcard = wxFileSelectorDefaultWildcardStr,
+FileSelector(const wxString & message = wxFileSelectorPromptStr,
+             const wxString & default_path = wxEmptyString,
+             const wxString & default_filename = wxEmptyString,
+             const wxString & default_extension = wxEmptyString,
+             const wxString & wildcard = wxFileSelectorDefaultWildcardStr,
              int flags = 0,
-             wxWindow *parent = NULL,
-             wxString label = wxEmptyString,
-             fdCallback cb = NULL,
-             void *cbdata = NULL);
+             wxWindow *parent = NULL);
 
 #endif
 

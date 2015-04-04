@@ -79,18 +79,20 @@ scroll information.  It also has some status flags.
 #include <wx/string.h>
 #include <wx/textfile.h>
 #include <wx/timer.h>
-#include <wx/generic/filedlgg.h>
 #include <wx/display.h>
 
 #include <wx/arrimpl.cpp>       // this allows for creation of wxObjArray
 
 #if defined(__WXMAC__)
+#if !wxCHECK_VERSION(3, 0, 0)
 #include <CoreServices/CoreServices.h>
 #include <wx/mac/private.h>
+#endif
 #endif
 
 #include "Project.h"
 
+#include "FreqWindow.h"
 #include "AutoRecovery.h"
 #include "AudacityApp.h"
 #include "AColor.h"
@@ -132,7 +134,7 @@ scroll information.  It also has some status flags.
 #ifdef EXPERIMENTAL_OD_FLAC
 #include "ondemand/ODDecodeFlacTask.h"
 #endif
-#include "LoadModules.h"
+#include "ModuleManager.h"
 
 #include "Theme.h"
 #include "AllThemeResources.h"
@@ -146,6 +148,7 @@ scroll information.  It also has some status flags.
 #include "toolbars/MeterToolBar.h"
 #include "toolbars/MixerToolBar.h"
 #include "toolbars/SelectionBar.h"
+#include "toolbars/SpectralSelectionBar.h"
 #include "toolbars/ToolsToolBar.h"
 #include "toolbars/TranscriptionToolBar.h"
 
@@ -278,9 +281,11 @@ public:
       }
 
 #if defined(__WXMAC__)
+#if !wxCHECK_VERSION(3, 0, 0)
       if (format.GetFormatId() == kDragPromisedFlavorFindFile) {
          return true;
       }
+#endif
 #endif
 
       return false;
@@ -305,6 +310,7 @@ public:
    bool GetData()
    {
       bool foundSupported = false;
+#if !wxCHECK_VERSION(3, 0, 0)
       bool firstFileAdded = false;
       OSErr result;
 
@@ -356,13 +362,14 @@ public:
             break;
          }
       }
-
+#endif
       return foundSupported;
    }
 
    bool OnDrop(wxCoord x, wxCoord y)
    {
       bool foundSupported = false;
+#if !wxCHECK_VERSION(3, 0, 0)
       bool firstFileAdded = false;
       OSErr result;
 
@@ -387,7 +394,7 @@ public:
             return true;
          }
       }
-
+#endif
       return CurrentDragHasSupportedFormat();
    }
 
@@ -503,7 +510,7 @@ AudacityProject *CreateNewAudacityProject()
    // and add the shortcut keys to the tooltips.
    p->GetControlToolBar()->RegenerateToolsTooltips();
 
-   ModuleManager::Dispatch(ProjectInitialized);
+   ModuleManager::Get().Dispatch(ProjectInitialized);
 
    p->Show(true);
 
@@ -540,8 +547,8 @@ void GetDefaultWindowRect(wxRect *defRect)
 {
    *defRect = wxGetClientDisplayRect();
 
-   defRect->width = 780;
-   defRect->height = 580;
+   defRect->width = 940;
+   defRect->height = 674;
 
    //These conditional values assist in improving placement and size
    //of new windows on different platforms.
@@ -727,8 +734,7 @@ AudacityProject::AudacityProject(wxWindow * parent, wxWindowID id,
                                  const wxPoint & pos,
                                  const wxSize & size)
    : wxFrame(parent, id, wxT("Audacity"), pos, size),
-     mSel0save(0.0),
-     mSel1save(0.0),
+     mRegionSave(),
      mLastPlayMode(normalPlay),
      mRate((double) gPrefs->Read(wxT("/SamplingRate/DefaultProjectSampleRate"), AudioIO::GetOptimalSupportedSampleRate())),
      mDefaultFormat((sampleFormat) gPrefs->
@@ -736,6 +742,7 @@ AudacityProject::AudacityProject(wxWindow * parent, wxWindowID id,
      mSnapTo(gPrefs->Read(wxT("/SnapTo"), SNAP_OFF)),
      mSelectionFormat(gPrefs->Read(wxT("/SelectionFormat"), wxT(""))),
      mDirty(false),
+     mRuler(NULL),
      mTrackPanel(NULL),
      mTrackFactory(NULL),
      mAutoScrolling(false),
@@ -746,6 +753,8 @@ AudacityProject::AudacityProject(wxWindow * parent, wxWindowID id,
      mMixerBoardFrame(NULL),
      mFreqWindow(NULL),
      mAliasMissingWarningDialog(NULL),
+     mPlaybackMeter(NULL),
+     mCaptureMeter(NULL),
      mToolManager(NULL),
      mbBusyImporting(false),
      mAudioIOToken(-1),
@@ -760,7 +769,7 @@ AudacityProject::AudacityProject(wxWindow * parent, wxWindowID id,
      mRecordingRecoveryHandler(NULL),
      mImportedDependencies(false),
      mWantSaveCompressed(false),
-     mLastEffect(NULL),
+     mLastEffect(wxEmptyString),
      mLastEffectType(0),
      mTimerRecordCanceled(false),
      mMenuClose(false)
@@ -790,8 +799,7 @@ AudacityProject::AudacityProject(wxWindow * parent, wxWindowID id,
    //
 
    // Selection
-   mViewInfo.sel0 = 0.0;
-   mViewInfo.sel1 = 0.0;
+   mViewInfo.selectedRegion = SelectedRegion();
 
    // Horizontal scrollbar
    mViewInfo.total = 1.0;
@@ -841,6 +849,9 @@ AudacityProject::AudacityProject(wxWindow * parent, wxWindowID id,
    //
    mToolManager = new ToolManager( this );
    GetSelectionBar()->SetListener(this);
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   GetSpectralSelectionBar()->SetListener(this);
+#endif
    mToolManager->LayoutToolBars();
 
    // Fix the sliders on the mixer toolbar so that the tip windows
@@ -984,15 +995,17 @@ AudacityProject::AudacityProject(wxWindow * parent, wxWindowID id,
 
    // loads either the XPM or the windows resource, depending on the platform
 #if !defined(__WXMAC__) && !defined(__WXX11__)
+   wxIcon *ic;
    #if defined(__WXMSW__)
-      wxIcon ic(wxICON(AudacityLogo));
+      ic = new wxIcon(wxICON(AudacityLogo));
    #elif defined(__WXGTK__)
-      wxIcon ic(wxICON(AudacityLogoAlpha));
+      ic = new wxIcon(wxICON(AudacityLogoAlpha));
    #else
-      wxIcon ic;
+      ic = new wxIcon();
       ic.CopyFromBitmap(theTheme.Bitmap(bmpAudacityLogo48x48));
    #endif
-   SetIcon(ic);
+   SetIcon(*ic);
+   delete ic;
 #endif
    mIconized = false;
 
@@ -1055,6 +1068,10 @@ void AudacityProject::UpdatePrefs()
       mToolManager->UpdatePrefs();
    }
 
+   if (mRuler) {
+      mRuler->RegenerateTooltips();
+   }
+
    // The toolbars will be recreated, so make sure we don't leave
    // a stale pointer hanging around.
    mLastFocusedWindow = NULL;
@@ -1105,14 +1122,14 @@ void AudacityProject::SetSel0(double newSel0)
 {
    //Bound checking should go on here
 
-   mViewInfo.sel0 = newSel0;
+   mViewInfo.selectedRegion.setT0(newSel0);
 }
 
 void AudacityProject::SetSel1(double newSel1)
 {
    //Bound checking should go on here
 
-   mViewInfo.sel1 = newSel1;
+   mViewInfo.selectedRegion.setT1(newSel1);
 }
 
 
@@ -1218,6 +1235,85 @@ void AudacityProject::AS_SetSelectionFormat(const wxString & format)
    gPrefs->Flush();
 }
 
+double AudacityProject::SSBL_GetRate() const
+{
+   return mRate;
+}
+
+const wxString & AudacityProject::SSBL_GetFrequencySelectionFormatName()
+{
+   return GetFrequencySelectionFormatName();
+}
+
+void AudacityProject::SSBL_SetFrequencySelectionFormatName(const wxString & formatName)
+{
+   mFrequencySelectionFormatName = formatName;
+
+   gPrefs->Write(wxT("/FrequencySelectionFormatName"), mFrequencySelectionFormatName);
+   gPrefs->Flush();
+}
+
+const wxString & AudacityProject::SSBL_GetLogFrequencySelectionFormatName()
+{
+   return GetLogFrequencySelectionFormatName();
+}
+
+void AudacityProject::SSBL_SetLogFrequencySelectionFormatName(const wxString & formatName)
+{
+   mLogFrequencySelectionFormatName = formatName;
+
+   gPrefs->Write(wxT("/LogFrequencySelectionFormatName"), mLogFrequencySelectionFormatName);
+   gPrefs->Flush();
+}
+
+void AudacityProject::SSBL_ModifySpectralSelection(double &bottom, double &top, bool done)
+{
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   double nyq = mRate / 2.0;
+   if (bottom >= 0.0)
+      bottom = std::min(nyq, bottom);
+   if (top >= 0.0)
+      top = std::min(nyq, top);
+   mViewInfo.selectedRegion.setFrequencies(bottom, top);
+   mTrackPanel->Refresh(false);
+   if (done) {
+      ModifyState(false);
+   }
+#else
+   bottom; top; done;
+#endif
+}
+
+const wxString & AudacityProject::GetFrequencySelectionFormatName() const
+{
+   return mFrequencySelectionFormatName;
+}
+
+void AudacityProject::SetFrequencySelectionFormatName(const wxString & formatName)
+{
+   SSBL_SetFrequencySelectionFormatName(formatName);
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   if (GetSpectralSelectionBar()) {
+      GetSpectralSelectionBar()->SetFrequencySelectionFormatName(formatName);
+   }
+#endif
+}
+
+const wxString & AudacityProject::GetLogFrequencySelectionFormatName() const
+{
+   return mLogFrequencySelectionFormatName;
+}
+
+void AudacityProject::SetLogFrequencySelectionFormatName(const wxString & formatName)
+{
+   SSBL_SetLogFrequencySelectionFormatName(formatName);
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   if (GetSpectralSelectionBar()) {
+      GetSpectralSelectionBar()->SetLogFrequencySelectionFormatName(formatName);
+   }
+#endif
+}
+
 void AudacityProject::SetSelectionFormat(const wxString & format)
 {
    AS_SetSelectionFormat(format);
@@ -1226,7 +1322,7 @@ void AudacityProject::SetSelectionFormat(const wxString & format)
    }
 }
 
-const wxString & AudacityProject::GetSelectionFormat()
+const wxString & AudacityProject::GetSelectionFormat() const
 {
    return mSelectionFormat;
 }
@@ -1234,8 +1330,7 @@ const wxString & AudacityProject::GetSelectionFormat()
 
 void AudacityProject::AS_ModifySelection(double &start, double &end, bool done)
 {
-   mViewInfo.sel0 = start;
-   mViewInfo.sel1 = end;
+   mViewInfo.selectedRegion.setTimes(start, end);
    mTrackPanel->Refresh(false);
    if (done) {
       ModifyState(false);
@@ -1395,7 +1490,8 @@ void AudacityProject::FixScrollbars()
 
    // Add 1/4 of a screen of blank space to the end of the longest track
    mViewInfo.screen = ((double) panelWidth) / mViewInfo.zoom;
-   double LastTime = wxMax( mTracks->GetEndTime(), mViewInfo.sel1 );
+   double LastTime =
+      wxMax( mTracks->GetEndTime(), mViewInfo.selectedRegion.t1() );
    mViewInfo.total = LastTime + mViewInfo.screen / 4;
 
    // Don't remove time from total that's still on the screen
@@ -1690,6 +1786,14 @@ void AudacityProject::OnScroll(wxScrollEvent & WXUNUSED(event))
 
 bool AudacityProject::HandleKeyDown(wxKeyEvent & event)
 {
+   // Check to see if it is a meta command
+   if (mCommandManager.HandleMeta(event))
+      return true;
+
+   // Any other keypresses must be destined for this project window.
+   if (wxGetTopLevelParent(wxWindow::FindFocus()) != this)
+      return false;
+
    if (event.GetKeyCode() == WXK_ALT)
       mTrackPanel->HandleAltKey(true);
 
@@ -1717,7 +1821,7 @@ bool AudacityProject::HandleKeyDown(wxKeyEvent & event)
       wxCommandEvent e(EVT_CAPTURE_KEY);
       e.SetEventObject(&event);
 
-      if (w->ProcessEvent(e)) {
+      if (w->GetEventHandler()->ProcessEvent(e)) {
          return false;
       }
    }
@@ -1732,6 +1836,10 @@ bool AudacityProject::HandleChar(wxKeyEvent & WXUNUSED(event))
 
 bool AudacityProject::HandleKeyUp(wxKeyEvent & event)
 {
+   // All keypresses must be destined for this project window.
+   if (wxGetTopLevelParent(wxWindow::FindFocus()) != this)
+      return false;
+
    if (event.GetKeyCode() == WXK_ALT)
       mTrackPanel->HandleAltKey(false);
 
@@ -1891,33 +1999,9 @@ void AudacityProject::OnCloseWindow(wxCloseEvent & event)
    if (GetAudioIOToken()>0 &&
        gAudioIO->IsStreamActive(GetAudioIOToken())) {
 
-      wxBusyCursor busy;
-      gAudioIO->StopStream();
-      while(gAudioIO->IsBusy()) {
-         wxMilliSleep(100);
-      }
-
       // We were playing or recording audio, but we've stopped the stream.
       wxCommandEvent dummyEvent;
       GetControlToolBar()->OnStop(dummyEvent);
-
-      if (gAudioIO->GetNumCaptureChannels() > 0) {
-         // Tracks are buffered during recording.  This flushes
-         // them so that there's nothing left in the append
-         // buffers.
-         TrackListIterator iter(mTracks);
-         for (Track * t = iter.First(); t; t = iter.Next()) {
-            if (t->GetKind() == Track::Wave) {
-               ((WaveTrack *)t)->Flush();
-            }
-         }
-         PushState(_("Recorded Audio"), _("Record"));
-         if(IsTimerRecordCancelled())
-         {
-            OnUndo();
-            ResetTimerRecordFlag();
-         }
-      }
 
       FixScrollbars();
       SetAudioIOToken(0);
@@ -1954,7 +2038,7 @@ void AudacityProject::OnCloseWindow(wxCloseEvent & event)
       }
    }
 
-   ModuleManager::Dispatch(ProjectClosing);
+   ModuleManager::Get().Dispatch(ProjectClosing);
 
    // Stop the timer since there's no need to update anything anymore
    delete mTimer;
@@ -2146,7 +2230,7 @@ wxArrayString AudacityProject::ShowOpenDialog(wxString extraformat, wxString ext
 
    // Construct the filter
    l.DeleteContents(true);
-   wxGetApp().mImporter->GetSupportedImportFormats(&l);
+   Importer::Get().GetSupportedImportFormats(&l);
 
    for (FormatList::compatibility_iterator n = l.GetFirst(); n; n = n->GetNext()) {
       /* this loop runs once per supported _format_ */
@@ -2154,7 +2238,7 @@ wxArrayString AudacityProject::ShowOpenDialog(wxString extraformat, wxString ext
 
       wxString newfilter = f->formatName + wxT("|");
       // bung format name into string plus | separator
-      for (size_t i = 0; i < f->formatExtensions.GetCount(); i++) {
+      for (size_t i = 0; i < f->formatExtensions.size(); i++) {
          /* this loop runs once per valid _file extension_ for file containing
           * the current _format_ */
          if (!newfilter.Contains(wxT("*.") + f->formatExtensions[i] + wxT(";")))
@@ -2827,11 +2911,19 @@ bool AudacityProject::HandleXMLTag(const wxChar *tag, const wxChar **attrs)
          requiredTags++;
       }
 
-      if (!wxStrcmp(attr, wxT("sel0")))
-         Internat::CompatibleToDouble(value, &mViewInfo.sel0);
+      if (!wxStrcmp(attr, wxT("sel0"))) {
+         double t0;
+         Internat::CompatibleToDouble(value, &t0);
+         mViewInfo.selectedRegion.setT0(t0, false);
+      }
 
-      if (!wxStrcmp(attr, wxT("sel1")))
-         Internat::CompatibleToDouble(value, &mViewInfo.sel1);
+      if (!wxStrcmp(attr, wxT("sel1"))) {
+         double t1;
+         Internat::CompatibleToDouble(value, &t1);
+         mViewInfo.selectedRegion.setT1(t1, false);
+      }
+
+      // PRL: to do: persistence of other fields of the selection
 
       long longVpos = 0;
       if (!wxStrcmp(attr, wxT("vpos")))
@@ -3025,8 +3117,9 @@ void AudacityProject::WriteXML(XMLWriter &xmlFile)
    xmlFile.WriteAttr(wxT("projname"), projName);
    xmlFile.WriteAttr(wxT("version"), wxT(AUDACITY_FILE_FORMAT_VERSION));
    xmlFile.WriteAttr(wxT("audacityversion"), AUDACITY_VERSION_STRING);
-   xmlFile.WriteAttr(wxT("sel0"), mViewInfo.sel0, 10);
-   xmlFile.WriteAttr(wxT("sel1"), mViewInfo.sel1, 10);
+   xmlFile.WriteAttr(wxT("sel0"), mViewInfo.selectedRegion.t0(), 10);
+   xmlFile.WriteAttr(wxT("sel1"), mViewInfo.selectedRegion.t1(), 10);
+   // PRL: to do: persistence of other fields of the selection
    xmlFile.WriteAttr(wxT("vpos"), mViewInfo.vpos);
    xmlFile.WriteAttr(wxT("h"), mViewInfo.h, 10);
    xmlFile.WriteAttr(wxT("zoom"), mViewInfo.zoom, 10);
@@ -3261,8 +3354,10 @@ bool AudacityProject::Save(bool overwrite /* = true */ ,
    }
 
 #ifdef __WXMAC__
+#if !wxCHECK_VERSION(3, 0, 0)
    wxFileName fn(mFileName);
    fn.MacSetTypeAndCreator(AUDACITY_PROJECT_TYPE, AUDACITY_CREATOR);
+#endif
 #endif
 
    if (bWantSaveCompressed)
@@ -3504,7 +3599,7 @@ bool AudacityProject::Import(wxString fileName, WaveTrackArray* pTrackArray /*= 
    int numTracks;
    wxString errorMessage=wxT("");
 
-   numTracks = wxGetApp().mImporter->Import(fileName,
+   numTracks = Importer::Get().Import(fileName,
                                             mTrackFactory,
                                             &newTracks,
                                             mTags,
@@ -3696,7 +3791,7 @@ void AudacityProject::InitialState()
 
    mUndoManager.ClearStates();
 
-   mUndoManager.PushState(mTracks, mViewInfo.sel0, mViewInfo.sel1,
+   mUndoManager.PushState(mTracks, mViewInfo.selectedRegion,
                           _("Created new project"), wxT(""));
 
    mUndoManager.StateSaved();
@@ -3715,7 +3810,7 @@ void AudacityProject::PushState(wxString desc,
                                 wxString shortDesc,
                                 int flags )
 {
-   mUndoManager.PushState(mTracks, mViewInfo.sel0, mViewInfo.sel1,
+   mUndoManager.PushState(mTracks, mViewInfo.selectedRegion,
                           desc, shortDesc, flags);
 
    mDirty = true;
@@ -3746,7 +3841,7 @@ void AudacityProject::PushState(wxString desc,
 
 void AudacityProject::ModifyState(bool bWantsAutoSave)
 {
-   mUndoManager.ModifyState(mTracks, mViewInfo.sel0, mViewInfo.sel1);
+   mUndoManager.ModifyState(mTracks, mViewInfo.selectedRegion);
    if (bWantsAutoSave)
       AutoSave();
 }
@@ -3807,7 +3902,7 @@ void AudacityProject::PopState(TrackList * l)
 void AudacityProject::SetStateTo(unsigned int n)
 {
    TrackList *l =
-       mUndoManager.SetStateTo(n, &mViewInfo.sel0, &mViewInfo.sel1);
+       mUndoManager.SetStateTo(n, &mViewInfo.selectedRegion);
    PopState(l);
 
    HandleResize();
@@ -3840,7 +3935,7 @@ void AudacityProject::UpdateLyrics()
    Lyrics* pLyricsPanel = mLyricsWindow->GetLyricsPanel();
    pLyricsPanel->Clear();
    for (int i = 0; i < pLabelTrack->GetNumLabels(); i++)
-      pLyricsPanel->Add(pLabelTrack->GetLabel(i)->t,
+      pLyricsPanel->Add(pLabelTrack->GetLabel(i)->getT0(),
                         pLabelTrack->GetLabel(i)->title);
    pLyricsPanel->Finish(pLabelTrack->GetEndTime());
    pLyricsPanel->Update(this->GetSel0());
@@ -3905,18 +4000,18 @@ void AudacityProject::Clear()
 
    while (n) {
       if (n->GetSelected() || n->IsSyncLockSelected()) {
-         n->Clear(mViewInfo.sel0, mViewInfo.sel1);
+         n->Clear(mViewInfo.selectedRegion.t0(), mViewInfo.selectedRegion.t1());
       }
       n = iter.Next();
    }
 
-   double seconds = mViewInfo.sel1 - mViewInfo.sel0;
+   double seconds = mViewInfo.selectedRegion.duration();
 
-   mViewInfo.sel1 = mViewInfo.sel0;
+   mViewInfo.selectedRegion.collapseToT0();
 
    PushState(wxString::Format(_("Deleted %.2f seconds at t=%.2f"),
                               seconds,
-                              mViewInfo.sel0),
+                              mViewInfo.selectedRegion.t0()),
              _("Delete"));
 
    RedrawProject();
@@ -3957,9 +4052,9 @@ void AudacityProject::Zoom(double level)
 ///////////////////////////////////////////////////////////////////
 void AudacityProject::Rewind(bool shift)
 {
-   mViewInfo.sel0 = 0;
-   if (!shift || mViewInfo.sel1 < mViewInfo.sel0)
-      mViewInfo.sel1 = 0;
+   mViewInfo.selectedRegion.setT0(0, false);
+   if (!shift)
+      mViewInfo.selectedRegion.setT1(0);
 
    TP_ScrollWindow(0);
 }
@@ -3977,9 +4072,9 @@ void AudacityProject::SkipEnd(bool shift)
 {
    double len = mTracks->GetEndTime();
 
-   mViewInfo.sel1 = len;
-   if (!shift || mViewInfo.sel0 > mViewInfo.sel1)
-      mViewInfo.sel0 = len;
+   mViewInfo.selectedRegion.setT1(len, false);
+   if (!shift)
+      mViewInfo.selectedRegion.setT0(len);
 
    // Make sure the end of the track is visible
    mTrackPanel->ScrollIntoView(len);
@@ -4030,14 +4125,6 @@ EditToolBar *AudacityProject::GetEditToolBar()
            NULL);
 }
 
-MeterToolBar *AudacityProject::GetMeterToolBar()
-{
-   return (MeterToolBar *)
-          (mToolManager ?
-           mToolManager->GetToolBar(MeterBarID) :
-           NULL);
-}
-
 MixerToolBar *AudacityProject::GetMixerToolBar()
 {
    return (MixerToolBar *)
@@ -4049,10 +4136,20 @@ MixerToolBar *AudacityProject::GetMixerToolBar()
 SelectionBar *AudacityProject::GetSelectionBar()
 {
    return (SelectionBar *)
-          (mToolManager ?
-           mToolManager->GetToolBar(SelectionBarID) :
-           NULL);
+      (mToolManager ?
+      mToolManager->GetToolBar(SelectionBarID) :
+      NULL);
 }
+
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+SpectralSelectionBar *AudacityProject::GetSpectralSelectionBar()
+{
+   return static_cast<SpectralSelectionBar*>(
+      (mToolManager ?
+      mToolManager->GetToolBar(SpectralSelectionBarID) :
+      NULL));
+}
+#endif
 
 ToolsToolBar *AudacityProject::GetToolsToolBar()
 {
@@ -4068,6 +4165,35 @@ TranscriptionToolBar *AudacityProject::GetTranscriptionToolBar()
           (mToolManager ?
            mToolManager->GetToolBar(TranscriptionBarID) :
            NULL);
+}
+
+Meter *AudacityProject::GetPlaybackMeter()
+{
+   return mPlaybackMeter;
+}
+
+void AudacityProject::SetPlaybackMeter(Meter *playback)
+{
+   mPlaybackMeter = playback;
+   if (gAudioIO)
+   {
+      gAudioIO->SetPlaybackMeter(this, mPlaybackMeter);
+   }
+}
+
+Meter *AudacityProject::GetCaptureMeter()
+{
+   return mCaptureMeter;
+}
+
+void AudacityProject::SetCaptureMeter(Meter *capture)
+{
+   mCaptureMeter = capture;
+
+   if (gAudioIO)
+   {
+      gAudioIO->SetCaptureMeter(this, mCaptureMeter);
+   }
 }
 
 void AudacityProject::SetStop(bool bStopped)
@@ -4086,7 +4212,7 @@ void AudacityProject::OnTimer(wxTimerEvent& WXUNUSED(event))
 
    // gAudioIO->GetNumCaptureChannels() should only be positive
    // when we are recording.
-   if (gAudioIO->GetNumCaptureChannels() > 0) {
+   if (GetAudioIOToken() > 0 && gAudioIO->GetNumCaptureChannels() > 0) {
       wxLongLong freeSpace = mDirManager->GetFreeDiskSpace();
       if (freeSpace >= 0) {
          wxString msg;
@@ -4168,11 +4294,12 @@ void AudacityProject::GetRegionsByLabel( Regions &regions )
          for( int i = 0; i < lt->GetNumLabels(); i++ )
          {
             const LabelStruct *ls = lt->GetLabel( i );
-            if( ls->t >= mViewInfo.sel0 && ls->t1 <= mViewInfo.sel1 )
+            if( ls->selectedRegion.t0() >= mViewInfo.selectedRegion.t0() &&
+                ls->selectedRegion.t1() <= mViewInfo.selectedRegion.t1() )
             {
                Region *region = new Region;
-               region->start = ls->t;
-               region->end = ls->t1;
+               region->start = ls->getT0();
+               region->end = ls->getT1();
                regions.Add( region );
             }
          }
@@ -4368,10 +4495,16 @@ void AudacityProject::TP_DisplaySelection()
       audioTime = 0;
    }
 
-   GetSelectionBar()->SetTimes(mViewInfo.sel0, mViewInfo.sel1, audioTime);
+   GetSelectionBar()->SetTimes(mViewInfo.selectedRegion.t0(),
+                               mViewInfo.selectedRegion.t1(), audioTime);
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   GetSpectralSelectionBar()->SetFrequencies
+      (mViewInfo.selectedRegion.f0(), mViewInfo.selectedRegion.f1());
+#endif
 
    if (!gAudioIO->IsBusy() && !mLockPlayRegion)
-      mRuler->SetPlayRegion(mViewInfo.sel0, mViewInfo.sel1);
+      mRuler->SetPlayRegion(mViewInfo.selectedRegion.t0(),
+                            mViewInfo.selectedRegion.t1());
 }
 
 
@@ -4599,6 +4732,24 @@ void AudacityProject::OnAudioIOStartRecording()
 // This is called after recording has stopped and all tracks have flushed.
 void AudacityProject::OnAudioIOStopRecording()
 {
+   // Only push state if we were capturing and not monitoring
+   if (GetAudioIOToken() > 0)
+   {
+      // Add to history
+      PushState(_("Recorded Audio"), _("Record"));
+
+      // Reset timer record 
+      if (IsTimerRecordCancelled())
+      {
+         OnUndo();
+         ResetTimerRecordFlag();
+      }
+
+      // Refresh the project window
+      FixScrollbars();
+      RedrawProject();
+   }
+
    // Write all cached files to disk, if any
    mDirManager->WriteCacheToDisk();
 

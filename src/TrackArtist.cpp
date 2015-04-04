@@ -99,7 +99,7 @@ TrackPanel::DoDrawIndicator();
         AdornedRulerPanel::DrawIndicator(); [not part of TrackPanel graphics]
         draw indicator on each track
 TrackPanel::DoDrawCursor();
-        draw cursor on each track  [at mViewInfo->sel0]
+        draw cursor on each track  [at mviewInfo->selectedRegion.t0()]
         AdornedRulerPanel::DrawCursor(); [not part of TrackPanel graphics]
         TrackPanel::DisplaySelection();
 \endcode
@@ -442,7 +442,9 @@ void TrackArtist::DrawTrack(const Track * t,
          DrawSpectrum(wt, dc, r, viewInfo, true, false);
          break;
       }
-      if (mbShowTrackNameInWaveform && wt->GetChannel() != Track::RightChannel) {   // so left or mono only
+      if (mbShowTrackNameInWaveform &&
+          // Exclude right channel of stereo track 
+          !(!wt->GetLinked() && wt->GetLink())) {
          wxFont labelFont(12, wxSWISS, wxNORMAL, wxNORMAL);
          dc.SetFont(labelFont);
          dc.SetTextForeground(wxColour(255, 255, 0));
@@ -1004,7 +1006,7 @@ void TrackArtist::DrawWaveformBackground(wxDC &dc, const wxRect &r, const double
 
       l = r.x + lx;
       w = x - lx;
-      if (lmaxbot != lmintop - 1) {
+      if (lmaxbot < lmintop - 1) {
          dc.DrawRectangle(l, r.y + lmaxtop, w, lmaxbot - lmaxtop);
          dc.DrawRectangle(l, r.y + lmintop, w, lminbot - lmintop);
       }
@@ -1023,7 +1025,7 @@ void TrackArtist::DrawWaveformBackground(wxDC &dc, const wxRect &r, const double
    dc.SetBrush(lsel ? selectedBrush : unselectedBrush);
    l = r.x + lx;
    w = x - lx;
-   if (lmaxbot != lmintop - 1) {
+   if (lmaxbot < lmintop - 1) {
       dc.DrawRectangle(l, r.y + lmaxtop, w, lmaxbot - lmaxtop);
       dc.DrawRectangle(l, r.y + lmintop, w, lminbot - lmintop);
    }
@@ -1390,7 +1392,8 @@ void TrackArtist::DrawWaveform(WaveTrack *track,
                                bool muted)
 {
    DrawBackgroundWithSelection(&dc, r, track, blankSelectedBrush, blankBrush,
-         viewInfo->sel0, viewInfo->sel1, viewInfo->h, viewInfo->zoom);
+         viewInfo->selectedRegion.t0(), viewInfo->selectedRegion.t1(),
+         viewInfo->h, viewInfo->zoom);
 
    for (WaveClipList::compatibility_iterator it = track->GetClipIterator(); it; it = it->GetNext())
       DrawClipWaveform(track, it->GetData(), dc, r, viewInfo,
@@ -1441,8 +1444,8 @@ void TrackArtist::DrawClipWaveform(WaveTrack *track,
 #endif
    double h = viewInfo->h;          //The horizontal position in seconds
    double pps = viewInfo->zoom;     //points-per-second--the zoom level
-   double sel0 = viewInfo->sel0;    //left selection bound
-   double sel1 = viewInfo->sel1;    //right selection bound
+   double sel0 = viewInfo->selectedRegion.t0();    //left selection bound
+   double sel1 = viewInfo->selectedRegion.t1();    //right selection bound
    double trackLen = clip->GetEndTime() - clip->GetStartTime();
    double tOffset = clip->GetOffset();
    double rate = clip->GetRate();
@@ -1731,7 +1734,8 @@ void TrackArtist::DrawSpectrum(WaveTrack *track,
                                bool logF)
 {
    DrawBackgroundWithSelection(&dc, r, track, blankSelectedBrush, blankBrush,
-         viewInfo->sel0, viewInfo->sel1, viewInfo->h, viewInfo->zoom);
+         viewInfo->selectedRegion.t0(), viewInfo->selectedRegion.t1(), 
+         viewInfo->h, viewInfo->zoom);
 
    if(!viewInfo->bUpdateTrackIndicator && viewInfo->bIsPlaying) {
       // BG: Draw (undecorated) waveform instead of spectrum
@@ -1770,6 +1774,29 @@ static float sumFreqValues(float *freq, int x0, float bin0, float bin1)
    return value;
 }
 
+
+// Helper function to decide on which color set to use.
+// dashCount counts both dashes and the spaces between them. 
+AColor::ColorGradientChoice ChooseColorSet( float bin0, float bin1, float selBinLo, 
+   float selBinCenter, float selBinHi, int dashCount )
+{
+   if ( (selBinCenter >= 0) && (bin0 <= selBinCenter) && (selBinCenter < bin1) )
+      return AColor::ColorGradientEdge;
+   else if (
+      (0 == dashCount % 2)    &&
+      (((selBinLo >= 0) && (bin0 <= selBinLo) && ( selBinLo < bin1))  ||
+       ((selBinHi >= 0) && (bin0 <= selBinHi) && ( selBinHi < bin1)) ) )
+      return AColor::ColorGradientEdge;
+   else if (
+      (selBinLo < 0 || selBinLo < bin1) && 
+      (selBinHi < 0 || selBinHi > bin0) )
+      return  AColor::ColorGradientTimeAndFrequencySelected;
+   else
+      return  AColor::ColorGradientTimeSelected;
+}
+
+
+
 void TrackArtist::DrawClipSpectrum(WaveTrack *track,
                                    WaveClip *clip,
                                    wxDC & dc,
@@ -1778,6 +1805,9 @@ void TrackArtist::DrawClipSpectrum(WaveTrack *track,
                                    bool autocorrelation,
                                    bool logF)
 {
+   enum { MONOCHROME_LINE = 230, COLORED_LINE  = 0 };
+   enum { DASH_LENGTH = 10 /* pixels */ };
+
 #if PROFILE_WAVEFORM
 #  ifdef __WXMSW__
    __time64_t tv0, tv1;
@@ -1789,8 +1819,17 @@ void TrackArtist::DrawClipSpectrum(WaveTrack *track,
 #endif
    double h = viewInfo->h;
    double pps = viewInfo->zoom;
-   double sel0 = viewInfo->sel0;
-   double sel1 = viewInfo->sel1;
+   double sel0 = viewInfo->selectedRegion.t0();
+   double sel1 = viewInfo->selectedRegion.t1();
+
+   double freqLo = SelectedRegion::UndefinedFrequency;
+   double freqHi = SelectedRegion::UndefinedFrequency;
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   if (!autocorrelation) {
+      freqLo = viewInfo->selectedRegion.f0();
+      freqHi = viewInfo->selectedRegion.f1();
+   }
+#endif
 
    double tOffset = clip->GetOffset();
    double rate = clip->GetRate();
@@ -1919,7 +1958,8 @@ void TrackArtist::DrawClipSpectrum(WaveTrack *track,
    else {
       minFreq = GetSpectrumLogMinFreq(ifreq/1000.0);
       if(minFreq < 1)
-         minFreq = ifreq/1000.0;
+         // Paul L:  I suspect this line is now unreachable
+         minFreq = 1.0;
    }
 
    bool usePxCache = false;
@@ -1950,9 +1990,15 @@ void TrackArtist::DrawClipSpectrum(WaveTrack *track,
 #endif
    }
 
+   // PRL:  Must the following two be integers?
    int minSamples = int ((double)minFreq * (double)windowSize / rate + 0.5);   // units are fft bins
    int maxSamples = int ((double)maxFreq * (double)windowSize / rate + 0.5);
    float binPerPx = float(maxSamples - minSamples) / float(mid.height);
+   float selBinLo = freqLo * (double)windowSize / rate;
+   float selBinHi = freqHi * (double)windowSize / rate;
+   float selBinCenter =
+      ((freqLo < 0 || freqHi < 0) ? -1 : sqrt(freqLo * freqHi))
+       * (double)windowSize / rate;
 
    int x = 0;
    sampleCount w1 = (sampleCount) ((t0*rate + x *rate *tstep) + .5);
@@ -2018,18 +2064,32 @@ void TrackArtist::DrawClipSpectrum(WaveTrack *track,
    {
       sampleCount w0 = w1;
       w1 = (sampleCount) ((t0*rate + (x+1) *rate *tstep) + .5);
+
+      // TODO: The logF and non-logF case are very similar.
+      // They should be merged and simplified.
       if (!logF)
       {
          for (int yy = 0; yy < mid.height; yy++) {
-            bool selflag = (ssel0 <= w0 && w1 < ssel1);
+            float bin0 = float (yy) * binPerPx + minSamples;
+            float bin1 = float (yy + 1) * binPerPx + minSamples;
+
+            // For spectral selection, determine what colour
+            // set to use.  We use a darker selection if
+            // in both spectral range and time range.
+
+            AColor::ColorGradientChoice selected =
+               AColor::ColorGradientUnselected;
+            // If we are in the time selected range, then we may use a differnt color set.
+            if (ssel0 <= w0 && w1 < ssel1)
+            {
+               selected = ChooseColorSet( bin0, bin1, selBinLo, selBinCenter, selBinHi, x/DASH_LENGTH );
+            }
+
+
             unsigned char rv, gv, bv;
             float value;
 
             if(!usePxCache) {
-               float bin0 = float (yy) * binPerPx + minSamples;
-               float bin1 = float (yy + 1) * binPerPx + minSamples;
-
-
                if (int (bin1) == int (bin0))
                   value = freq[half * x + int (bin0)];
                else {
@@ -2066,7 +2126,7 @@ void TrackArtist::DrawClipSpectrum(WaveTrack *track,
             else
                value = clip->mSpecPxCache->values[x * mid.height + yy];
 
-            GetColorGradient(value, selflag, mIsGrayscale, &rv, &gv, &bv);
+            GetColorGradient(value, selected, mIsGrayscale, &rv, &gv, &bv);
 
             int px = ((mid.height - 1 - yy) * mid.width + x) * 3;
             data[px++] = rv;
@@ -2076,7 +2136,6 @@ void TrackArtist::DrawClipSpectrum(WaveTrack *track,
       }
       else //logF
       {
-         bool selflag = (ssel0 <= w0 && w1 < ssel1);
          unsigned char rv, gv, bv;
          float value;
          int x0=x*half;
@@ -2148,19 +2207,28 @@ void TrackArtist::DrawClipSpectrum(WaveTrack *track,
          float yy2 = yy2_base;
          double exp_scale_per_height = exp(scale/mid.height);
          for (int yy = 0; yy < mid.height; yy++) {
+            if (int(yy2)>=half)
+               yy2=half-1;
+            if (yy2<0)
+               yy2=0;
+            float bin0 = float(yy2);
+            yy2_base *= exp_scale_per_height;
+            float yy3 = yy2_base;
+            if (int(yy3)>=half)
+               yy3=half-1;
+            if (yy3<0)
+               yy3=0;
+            float bin1 = float(yy3);
+
+            AColor::ColorGradientChoice selected =
+               AColor::ColorGradientUnselected;
+            // If we are in the time selected range, then we may use a differnt color set.
+            if (ssel0 <= w0 && w1 < ssel1)
+            {
+               selected = ChooseColorSet( bin0, bin1, selBinLo, selBinCenter, selBinHi, x/DASH_LENGTH );
+            }
+
             if(!usePxCache) {
-               if (int(yy2)>=half)
-                  yy2=half-1;
-               if (yy2<0)
-                  yy2=0;
-               float bin0 = float(yy2);
-               yy2_base *= exp_scale_per_height;
-               float yy3 = yy2_base;
-               if (int(yy3)>=half)
-                  yy3=half-1;
-               if (yy3<0)
-                  yy3=0;
-               float bin1 = float(yy3);
 
 #ifdef EXPERIMENTAL_FIND_NOTES
                if (mFftFindNotes) {
@@ -2201,12 +2269,12 @@ void TrackArtist::DrawClipSpectrum(WaveTrack *track,
                if (value < 0.0)
                   value = float(0.0);
                clip->mSpecPxCache->values[x * mid.height + yy] = value;
-               yy2 = yy2_base;
             }
             else
                value = clip->mSpecPxCache->values[x * mid.height + yy];
+            yy2 = yy2_base;
 
-            GetColorGradient(value, selflag, mIsGrayscale, &rv, &gv, &bv);
+            GetColorGradient(value, selected, mIsGrayscale, &rv, &gv, &bv);
 
 #ifdef EXPERIMENTAL_FFT_Y_GRID
             if (mFftYGrid && yGrid[yy]) {
@@ -2554,8 +2622,8 @@ void TrackArtist::DrawNoteTrack(NoteTrack *track,
    SonifyBeginNoteBackground();
    double h = viewInfo->h;
    double pps = viewInfo->zoom;
-   double sel0 = viewInfo->sel0;
-   double sel1 = viewInfo->sel1;
+   double sel0 = viewInfo->selectedRegion.t0();
+   double sel1 = viewInfo->selectedRegion.t1();
 
    double h1 = X_TO_TIME(r.x + r.width);
 
@@ -2672,7 +2740,7 @@ void TrackArtist::DrawNoteTrack(NoteTrack *track,
    iterator.begin();
    //for every event
    Alg_event_ptr evt;
-   while ((evt = iterator.next())) {
+   while (0 != (evt = iterator.next())) {
       if (evt->get_type() == 'n') { // 'n' means a note
          Alg_note_ptr note = (Alg_note_ptr) evt;
          // if the note's channel is visible
@@ -2681,7 +2749,7 @@ void TrackArtist::DrawNoteTrack(NoteTrack *track,
             double x1 = x + note->dur;
             if (x < h1 && x1 > h) { // omit if outside box
                const char *shape = NULL;
-               if (note->loud > 0.0 || !(shape = IsShape(note))) {
+               if (note->loud > 0.0 || 0 == (shape = IsShape(note))) {
                   wxRect nr; // "note rectangle"
                   nr.y = track->PitchToY(note->pitch);
                   nr.height = track->GetPitchHeight();
@@ -2924,8 +2992,8 @@ void TrackArtist::DrawLabelTrack(LabelTrack *track,
                                  const wxRect & r,
                                  const ViewInfo *viewInfo)
 {
-   double sel0 = viewInfo->sel0;
-   double sel1 = viewInfo->sel1;
+   double sel0 = viewInfo->selectedRegion.t0();
+   double sel1 = viewInfo->selectedRegion.t1();
 
    if (!track->GetSelected() && !track->IsSyncLockSelected())
       sel0 = sel1 = 0.0;
@@ -2957,7 +3025,8 @@ void TrackArtist::UpdatePrefs()
    mdBrange = gPrefs->Read(wxT("/GUI/EnvdBRange"), mdBrange);
    mShowClipping = gPrefs->Read(wxT("/GUI/ShowClipping"), mShowClipping);
 
-   mMaxFreq = gPrefs->Read(wxT("/Spectrum/MaxFreq"), -1);
+   // mMaxFreq should have the same default as in SpectrumPrefs.
+   mMaxFreq = gPrefs->Read(wxT("/Spectrum/MaxFreq"), 8000L);
    mMinFreq = gPrefs->Read(wxT("/Spectrum/MinFreq"), -1);
    mLogMaxFreq = gPrefs->Read(wxT("/SpectrumLog/MaxFreq"), -1);
    if( mLogMaxFreq < 0 )
@@ -2965,6 +3034,8 @@ void TrackArtist::UpdatePrefs()
    mLogMinFreq = gPrefs->Read(wxT("/SpectrumLog/MinFreq"), -1);
    if( mLogMinFreq < 0 )
       mLogMinFreq = mMinFreq;
+   if (mLogMinFreq < 1)
+      mLogMinFreq = 1;
 
    mWindowSize = gPrefs->Read(wxT("/Spectrum/FFTSize"), 256);
    mIsGrayscale = (gPrefs->Read(wxT("/Spectrum/Grayscale"), 0L) != 0);

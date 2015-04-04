@@ -35,6 +35,7 @@
 #include "../widgets/treebook.h"
 #endif
 
+#include "../AudioIO.h"
 #include "../Experimental.h"
 #include "../Project.h"
 #include "../Prefs.h"
@@ -185,7 +186,11 @@ PrefsDialog::PrefsDialog(wxWindow * parent)
    Fit();
    wxSize sz = GetSize();
 
-   wxASSERT_MSG(sz.x <= 800 && sz.y <= 600, wxT("Preferences dialog exceeds max size"));
+   // This ASSERT used to limit us to 800 x 600.
+   // However, we think screens have got bigger now, and that was a bit too restrictive.
+   // The impetus for increasing the limit (before we ASSERT) was that this ASSERT
+   // was firing with wxWidgets 3.0, which has slightly different sizer behaviour.
+   wxASSERT_MSG(sz.x <= 1000 && sz.y <= 750, wxT("Preferences dialog exceeds max size"));
 
    if (sz.x > 800) {
       sz.x = 800;

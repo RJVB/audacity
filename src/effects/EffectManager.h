@@ -18,12 +18,15 @@ effects.
 
 *//*******************************************************************/
 
-
 #ifndef __AUDACITY_EFFECTMANAGER__
 #define __AUDACITY_EFFECTMANAGER__
 
 #include <map>
+#include <string>
+#include <vector>
 
+#include "audacity/EffectInterface.h"
+#include "../PluginManager.h"
 #include "Effect.h"
 
 #ifdef EFFECT_CATEGORIES
@@ -31,9 +34,17 @@ effects.
 #endif
 
 WX_DEFINE_USER_EXPORTED_ARRAY(Effect *, EffectArray, class AUDACITY_DLL_API);
+WX_DECLARE_STRING_HASH_MAP_WITH_DECL(Effect *, EffectMap, class AUDACITY_DLL_API);
 
+#if defined(EXPERIMENTAL_EFFECTS_RACK)
+class EffectRack;
+#endif
 
-class AUDACITY_DLL_API EffectManager {
+class AUDACITY_DLL_API EffectManager
+{
+#if defined(EXPERIMENTAL_EFFECTS_RACK)
+ friend class EffectRack;
+#endif
 
  public:
 
@@ -56,22 +67,57 @@ class AUDACITY_DLL_API EffectManager {
 
    /** Register an effect so it will appear in the menu. */
    void RegisterEffect(Effect *f, int AdditionalFlags=0);
+   void RegisterEffect(ModuleInterface *p, Effect *f, int AdditionalFlags=0);
 
    /** Unregister all effects. */
    void UnregisterEffects();
 
-   /** Return an effect by its numerical ID. */
-   Effect *GetEffect(int ID);
+   /** Run an effect given the plugin ID */
+   // Returns true on success.  Will only operate on tracks that
+   // have the "selected" flag set to true, which is consistent with
+   // Audacity's standard UI.
+   bool DoEffect(const PluginID & ID,
+                 wxWindow *parent,
+                 int flags,
+                 double projectRate,
+                 TrackList *list,
+                 TrackFactory *factory,
+                 SelectedRegion *selectedRegion,
+                 wxString params);
 
-   Effect* GetEffectByIdentifier(const wxString strTarget, const int kFlags = ALL_EFFECTS);
+   wxString GetEffectName(const PluginID & ID);
+   wxString GetEffectIdentifier(const PluginID & ID);
+   wxString GetEffectDescription(const PluginID & ID);
 
-   /** Return the number of registered effects. */
-   int GetNumEffects();
+   /** Support for batch commands */
+   bool SupportsAutomation(const PluginID & ID);
+   wxString GetEffectParameters(const PluginID & ID);
+   bool SetEffectParameters(const PluginID & ID, const wxString & params);
+   bool PromptUser(const PluginID & ID, wxWindow *parent);
 
-   /** Returns a sorted array of effects, which may be filtered
-       using the flags parameter.  The caller should dispose
-       of the array when done. */
-   EffectArray *GetEffects(int flags = ALL_EFFECTS);
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+   // Realtime effect processing
+   bool RealtimeIsActive();
+   bool RealtimeIsSuspended();
+   void RealtimeAddEffect(Effect *effect);
+   void RealtimeRemoveEffect(Effect *effect);
+   void RealtimeSetEffects(const EffectArray & mActive);
+   void RealtimeInitialize();
+   void RealtimeAddProcessor(int group, int chans, float rate);
+   void RealtimeFinalize();
+   void RealtimeSuspend();
+   void RealtimeResume();
+   void RealtimeProcessStart();
+   sampleCount RealtimeProcess(int group, int chans, float **buffers, sampleCount numSamples);
+   void RealtimeProcessEnd();
+   int GetRealtimeLatency();
+#endif
+
+#if defined(EXPERIMENTAL_EFFECTS_RACK)
+   void ShowRack();
+#endif
+
+   const PluginID & GetEffectByIdentifier(const wxString & strTarget);
 
 #ifdef EFFECT_CATEGORIES
 
@@ -104,9 +150,31 @@ class AUDACITY_DLL_API EffectManager {
 #endif
 
  private:
+   /** Return an effect by its ID. */
+   Effect *GetEffect(const PluginID & ID);
 
-   EffectArray mEffects;
+#if defined(EXPERIMENTAL_EFFECTS_RACK)
+   EffectRack *GetRack();
+#endif
+
+private:
+   EffectMap mEffects;
+
    int mNumEffects;
+
+#if defined(EXPERIMENTAL_EFFECTS_RACK)
+   EffectRack *mRack;
+#endif
+
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+   wxCriticalSection mRealtimeLock;
+   EffectArray mRealtimeEffects;
+   int mRealtimeLatency;
+   bool mRealtimeSuspended;
+   bool mRealtimeActive;
+   wxArrayInt mRealtimeChans;
+   wxArrayDouble mRealtimeRates;
+#endif
 
 #ifdef EFFECT_CATEGORIES
    // This maps URIs to EffectCategory pointers for all added categories.
@@ -121,7 +189,6 @@ class AUDACITY_DLL_API EffectManager {
    // are placed in.
    EffectSet *mUnsorted;
 #endif
-
 };
 
 

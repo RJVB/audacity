@@ -1030,7 +1030,7 @@ ProgressDialog::ProgressDialog(const wxString & title, const wxString & message,
 
 #if defined(__WXGTK__)
    // Under GTK, when applying any effect that prompts the user, it's more than
-   // like that FindFocus() will return NULL.  So, make sure something has focus.
+   // likely that FindFocus() will return NULL.  So, make sure something has focus.
    if (GetParent()) {
       GetParent()->SetFocus();
    }
@@ -1148,9 +1148,18 @@ ProgressDialog::ProgressDialog(const wxString & title, const wxString & message,
 
    Show(false);
 
-   // Even though we won't necessarily show the dialog due to the the 500ms
+   // Even though we won't necessarily show the dialog due to the 500ms
    // delay, we MUST disable other windows/menus anyway since we run the risk
    // of allowing other tasks to run before this one is complete.
+   //
+   // Reviewed this code per Proposed Features #1, at 
+   // http://wiki.audacityteam.org/wiki/Proposal_Timer_Record_Improvements.
+   // Note that this causes a problem for Timer Record wait dialog 
+   // (see TimerRecordDialog::RunWaitDialog()), because it makes it 
+   // impossible to do any editing, even in other open projects, 
+   // while waiting for Timer Record to start -- and then also 
+   // while it's recording, it has a ProgressDialog, so really, 
+   // no editing in any project until Timer Record finishes. 
    mDisable = new wxWindowDisabler(this);
 
 #if defined(__WXMAC__)
@@ -1245,9 +1254,32 @@ ProgressDialog::~ProgressDialog()
    }
 #endif
 
-   if (mHadFocus) {
+   // Restore saved focus, but only if the window still exists.
+   //
+   // It is possible that it was a deferred deletion and it was deleted since
+   // we captured the focused window.  So, we need to verify that the window
+   // still exists by searching all of the wxWidgets windows.  It's the only
+   // sure way.
+   if (mHadFocus && SearchForWindow(wxTopLevelWindows, mHadFocus)) {
       mHadFocus->SetFocus();
    }
+}
+
+//
+// Recursivaly search the window list for the given window.
+//
+bool ProgressDialog::SearchForWindow(const wxWindowList & list, const wxWindow *searchfor)
+{
+   wxWindowList::compatibility_iterator node = list.GetFirst();
+   while (node) {
+      wxWindow *win = node->GetData();
+      if (win == searchfor || SearchForWindow(win->GetChildren(), searchfor)) {
+         return true;
+      }
+      node = node->GetNext();
+   }
+
+   return false;
 }
 
 //
@@ -1553,7 +1585,12 @@ int TimerProgressDialog::Update(const wxString & message /*= wxEmptyString*/)
    }
 
    int nGaugeValue = (1000 * elapsed) / mDuration; // range = [0,1000]
-   wxASSERT((nGaugeValue >= 0) && (nGaugeValue <= 1000));
+   // Running in TimerRecordDialog::RunWaitDialog(), for some unknown reason, 
+   // nGaugeValue here is often a little over 1000. 
+   // From testing, it's never shown bigger than 1009, but 
+   // give it a little extra, to 1010. 
+   //   wxASSERT((nGaugeValue >= 0) && (nGaugeValue <= 1000)); // This ought to work. 
+   wxASSERT((nGaugeValue >= 0) && (nGaugeValue <= 1010));
    if (nGaugeValue != mLastValue)
    {
       mGauge->SetValue(nGaugeValue);

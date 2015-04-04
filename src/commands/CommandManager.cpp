@@ -91,6 +91,7 @@ CommandManager.  It holds the callback for one command.
 #include "CommandManager.h"
 
 #include "Keyboard.h"
+#include "../PluginManager.h"
 #include "../effects/EffectManager.h"
 
 // On wxGTK, there may be many many many plugins, but the menus don't automatically
@@ -417,29 +418,16 @@ void CommandManager::InsertItem(wxString name, wxString label_in,
 
    int ID = NewIdentifier(name, label, menu, callback, false, 0, 0);
 
-   // Replace the accel key with the one from the preferences
+   // Remove the accelerator as it will be handled internally
    label = label.BeforeFirst(wxT('\t'));
 
-   // This is a very weird hack.  Under GTK, menu labels are totally
-   // linked to accelerators the first time you create a menu item
-   // with that label and can't be changed.  This causes all sorts of
-   // problems.  As a workaround, we create each menu item with a
-   // made-up name (just an ID number string) but with the accelerator
-   // we want, then immediately change the label to the correct string.
-   // -DMM
-   mHiddenID++;
-   wxString dummy, newLabel;
-   dummy.Printf(wxT("%s%08d"), label.c_str(), mHiddenID);
-   newLabel = label;
-
    if (checkmark >= 0) {
-      menu->InsertCheckItem(pos, ID, dummy);
+      menu->InsertCheckItem(pos, ID, label);
       menu->Check(ID, checkmark != 0);
    }
    else {
-      menu->Insert(pos, ID, dummy);
+      menu->Insert(pos, ID, label);
    }
-   menu->SetLabel(ID, newLabel);
 
    mbSeparatorAllowed = true;
 }
@@ -494,28 +482,17 @@ void CommandManager::AddItem(const wxChar *name,
       SetCommandFlags(name, flags, mask);
    }
 
-   // Replace the accel key with the one from the preferences
+   // Remove the accelerator as it will be handled internally
    label = label.BeforeFirst(wxT('\t'));
 
-   // This is a very weird hack.  Under GTK, menu labels are totally
-   // linked to accelerators the first time you create a menu item
-   // with that label and can't be changed.  This causes all sorts of
-   // problems.  As a workaround, we create each menu item with a
-   // made-up name (just an ID number string) but with the accelerator
-   // we want, then immediately change the label to the correct string.
-   // -DMM
-   wxString newLabel;
-   newLabel.Printf(wxT("%s%08d"), label.c_str(), ++mHiddenID);
-
    if (checkmark >= 0) {
-      CurrentMenu()->AppendCheckItem(ID, newLabel);
+      CurrentMenu()->AppendCheckItem(ID, label);
       CurrentMenu()->Check(ID, checkmark != 0);
    }
    else {
-      CurrentMenu()->Append(ID, newLabel);
+      CurrentMenu()->Append(ID, label);
    }
 
-   CurrentMenu()->SetLabel(ID, label);
    mbSeparatorAllowed = true;
 }
 
@@ -619,6 +596,24 @@ void CommandManager::AddCommand(const wxChar *name,
    }
 }
 
+void CommandManager::AddMetaCommand(const wxChar *name,
+                                    const wxChar *label_in,
+                                    CommandFunctor *callback,
+                                    const wxChar *accel)
+{
+   wxString label(label_in);
+   label += wxT("\t");
+   label += accel;
+
+   NewIdentifier(name, label, NULL, callback, false, 0, 0);
+
+   CommandListEntry *entry = mCommandNameHash[name];
+   entry->enabled = false;
+   entry->isMeta = true;
+   entry->flags = 0;
+   entry->mask = 0;
+}
+
 void CommandManager::AddSeparator()
 {
    if( mHidingLevel > 0 )
@@ -696,6 +691,7 @@ int CommandManager::NewIdentifier(wxString name, wxString label, wxMenu *menu,
    tmpEntry->mask = mDefaultMask;
    tmpEntry->enabled = true;
    tmpEntry->wantevent = (label.Find(wxT("\twantevent")) != wxNOT_FOUND);
+   tmpEntry->isMeta = false;
 
    // Key from preferences overridse the default key given
    gPrefs->SetPath(wxT("/NewKeys"));
@@ -850,11 +846,8 @@ void CommandManager::Modify(wxString name, wxString newLabel)
 {
    CommandListEntry *entry = mCommandNameHash[name];
    if (entry && entry->menu) {
-      newLabel = newLabel.BeforeFirst(wxT('\t'));
-      if (!entry->key.IsEmpty())
-         newLabel = newLabel + wxT("\t") + entry->key;
-      entry->label = newLabel;
-      entry->menu->SetLabel(entry->id, newLabel);
+      entry->label = newLabel.BeforeFirst(wxT('\t'));
+      entry->menu->SetLabel(entry->id, entry->label);
    }
 }
 
@@ -920,6 +913,20 @@ void CommandManager::HandleMenuClose(wxMenuEvent &evt)
    // Forget about it
    mOpenMenu = NULL;
 
+#if defined(__WXMSW__)
+   // On Windows, the last accelerator entry will remain active due to the way that
+   // wxMenuBar::RebuildAccelTable() functions.  Just so happens that if that last
+   // entry is an unmodified character, then that character will not be usable in
+   // a label track until a different menu has been opened...thus replacing that
+   // dangling accelerator entry.
+   //
+   // This should go away (or at least be re-evaluated) when moving to wx3 as they've
+   // completely redesigned the accelerator table handling.
+#if !wxCHECK_VERSION(3, 0, 0)
+   wxAcceleratorTable & at = const_cast<wxAcceleratorTable &>(GetActiveProject()->GetMenuBar()->GetAccelTable());
+   at = wxNullAcceleratorTable;
+#endif
+#endif
    return;
 }
 
@@ -1064,6 +1071,27 @@ bool CommandManager::HandleKey(wxKeyEvent &evt, wxUint32 flags, wxUint32 mask)
    return false;
 }
 
+bool CommandManager::HandleMeta(wxKeyEvent &evt)
+{
+   wxString keyStr = KeyEventToKeyString(evt);
+   CommandListEntry *entry = mCommandKeyHash[keyStr];
+
+   // Return unhandle if it isn't a meta command
+   if (!entry || !entry->isMeta)
+   {
+      return false;
+   }
+
+   // Meta commands are always disabled so they do not interfere with the
+   // rest of the command handling.  But, to use the common handler, we
+   // enable it temporarily and then disable it again after handling.
+   entry->enabled = true;
+   bool ret = HandleCommandEntry( entry, 0xffffffff, 0xffffffff, &evt );
+   entry->enabled = false;
+
+   return ret;
+}
+
 /// HandleTextualCommand() allows us a limitted version of script/batch
 /// behavior, since we can get from a string command name to the actual
 /// code to run.
@@ -1072,7 +1100,8 @@ bool CommandManager::HandleTextualCommand(wxString & Str, wxUint32 flags, wxUint
    unsigned int i;
 
    // Linear search for now...
-   for(i=0; i<mCommandList.GetCount(); i++) {
+   for (i = 0; i < mCommandList.GetCount(); i++)
+   {
       if (!mCommandList[i]->multi)
       {
          if( Str.IsSameAs( mCommandList[i]->name ))
@@ -1086,23 +1115,23 @@ bool CommandManager::HandleTextualCommand(wxString & Str, wxUint32 flags, wxUint
    // instead we only try the effects.
    AudacityProject * proj = GetActiveProject();
    if( !proj )
+   {
       return false;
-
-   bool result = false;
-   int effectFlags = ALL_EFFECTS | CONFIGURED_EFFECT;
-   EffectArray *effects = EffectManager::Get().GetEffects(effectFlags);
-   if (effects) {
-      for(i=0; i<effects->GetCount(); i++) {
-         wxString effectName = (*effects)[i]->GetEffectName();
-         if( Str.IsSameAs( effectName ))
-         {
-            result = proj->OnEffect( effectFlags, (*effects)[i] );
-            break;
-         }
-      }
-      delete effects;
    }
-   return result;
+
+   PluginManager & pm = PluginManager::Get();
+   EffectManager & em = EffectManager::Get();
+   const PluginDescriptor *plug = pm.GetFirstPlugin(PluginTypeEffect);
+   while (plug)
+   {
+      if (em.GetEffectByIdentifier(plug->GetID()).IsSameAs(Str))
+      {
+         return proj->OnEffect( ALL_EFFECTS | CONFIGURED_EFFECT, plug->GetID()); 
+      }
+      plug = pm.GetNextPlugin(PluginTypeEffect);
+   }
+
+   return false;
 }
 
 void CommandManager::GetCategories(wxArrayString &cats)

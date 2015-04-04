@@ -14,8 +14,6 @@
 #ifndef __AUDACITY_CONTROL_TOOLBAR__
 #define __AUDACITY_CONTROL_TOOLBAR__
 
-#include <wx/timer.h>
-
 #include "ToolBar.h"
 #include "../Theme.h"
 
@@ -44,10 +42,6 @@ class ControlToolBar:public ToolBar {
 
    void UpdatePrefs();
    virtual void OnKeyEvent(wxKeyEvent & event);
-   void OnKeyDown(wxKeyEvent & event);
-   void OnKeyUp(wxKeyEvent & event);
-
-   void OnTimer(wxTimerEvent & event);
 
    // msmeyer: These are public, but it's far better to
    // call the "real" interface functions like PlayCurrentRegion() and
@@ -60,9 +54,9 @@ class ControlToolBar:public ToolBar {
    void OnPause(wxCommandEvent & evt);
 
    //These allow buttons to be controlled externally:
-   void SetPlay(bool down, bool looped=false);
+   void SetPlay(bool down, bool looped=false, bool cutPreview = false);
    void SetStop(bool down);
-   void SetRecord(bool down);
+   void SetRecord(bool down, bool append=false);
 
    bool IsRecordDown();
 
@@ -73,7 +67,10 @@ class ControlToolBar:public ToolBar {
    void PlayPlayRegion(double t0, double t1,
                        bool looped = false,
                        bool cutpreview = false,
-                       TimeTrack *timetrack = NULL);
+                       TimeTrack *timetrack = NULL,
+                       // May be other than t0,
+                       // but will be constrained between t0 and t1
+                       const double *pStartTime = NULL);
    void PlayDefault();
 
    // Stop playing
@@ -82,8 +79,6 @@ class ControlToolBar:public ToolBar {
    void Populate();
    virtual void Repaint(wxDC *dc);
    virtual void EnableDisableButtons();
-
-   void SetVUMeters(AudacityProject *p);
 
    virtual void ReCreateButtons();
    void RegenerateToolsTooltips();
@@ -94,7 +89,13 @@ class ControlToolBar:public ToolBar {
       int id,
       bool processdownevents,
       const wxChar *label);
-   void MakeLoopImage();
+
+   static
+   void MakeAlternateImages(AButton &button, int idx,
+                            teBmps eEnabledUp,
+                            teBmps eEnabledDown,
+                            teBmps eDisabled);
+
    void ArrangeButtons();
    void SetupCutPreviewTracks(double playStart, double cutStart,
                              double cutEnd, double playEnd);
@@ -117,8 +118,6 @@ class ControlToolBar:public ToolBar {
    AButton *mPause;
    AButton *mStop;
    AButton *mFF;
-
-   wxTimer mShiftKeyTimer;
 
    static AudacityProject *mBusyProject;
 

@@ -1,4 +1,4 @@
-   /**********************************************************************
+/**********************************************************************
 
   Audacity: A Digital Audio Editor
 
@@ -24,13 +24,17 @@
 #include "../Sequence.h"
 #include "Ruler.h"
 
+// Event used to notify all meters of preference changes
+DECLARE_EXPORTED_EVENT_TYPE(AUDACITY_DLL_API, EVT_METER_PREFERENCES_CHANGED, -1);
+
 // Increase this when we add support for multichannel meters
 // (most of the code is already there)
 const int kMaxMeterBars = 2;
 
 struct MeterBar {
    bool   vert;
-   wxRect r;
+   wxRect b;         // Bevel around bar
+   wxRect r;         // True bar drawing area
    float  peak;
    float  rms;
    float  peakHold;
@@ -81,6 +85,8 @@ class MeterUpdateQueue
    MeterUpdateMsg  *mBuffer;
 };
 
+class MeterAx;
+
 class Meter : public wxPanel
 {
    DECLARE_DYNAMIC_CLASS(Meter)
@@ -89,16 +95,17 @@ class Meter : public wxPanel
    // These should be kept in the same order as they appear
    // in the menu
    enum Style {
+      AutomaticStereo,
       HorizontalStereo,
       VerticalStereo,
-      VerticalMulti,
-      Equalizer,
-      Waveform,
-      MixerTrackCluster // Doesn't show menu, icon, or L/R labels, but otherwise like VerticalStereo.
+      MixerTrackCluster, // Doesn't show menu, icon, or L/R labels, but otherwise like VerticalStereo.
+      HorizontalStereoCompact, // Thinner.
+      VerticalStereoCompact, // Narrower.
    };
 
 
-   Meter(wxWindow* parent, wxWindowID id,
+   Meter(AudacityProject *,
+         wxWindow* parent, wxWindowID id,
          bool isInput,
          const wxPoint& pos = wxDefaultPosition,
          const wxSize& size = wxDefaultSize,
@@ -110,7 +117,8 @@ class Meter : public wxPanel
    void UpdatePrefs();
    void Clear();
 
-   Style GetStyle() { return mStyle; }
+   Style GetStyle() const { return mStyle; }
+   Style GetDesiredStyle() const { return mDesiredStyle; }
    void SetStyle(Style newStyle);
 
    /** \brief
@@ -144,6 +152,7 @@ class Meter : public wxPanel
     */
    void UpdateDisplay(int numChannels,
                       int numFrames, float *sampleData);
+
    // Vaughan, 2010-11-29: This not currently used. See comments in MixerTrackCluster::UpdateMeter().
    //void UpdateDisplay(int numChannels, int numFrames,
    //                     // Need to make these double-indexed max and min arrays if we handle more than 2 channels.
@@ -156,65 +165,69 @@ class Meter : public wxPanel
     * This method is thread-safe!  Feel free to call from a
     * different thread (like from an audio I/O callback).
     */
-   bool IsMeterDisabled();
+   bool IsMeterDisabled() const;
 
-   float GetMaxPeak();
+   float GetMaxPeak() const;
 
-   double ToLinearIfDB(double value);
+   bool IsClipping() const;
 
+   void StartMonitoring();
+
+   // These exist solely for the purpose of reseting the toolbars
+   void *SaveState();
+   void RestoreState(void *state);
+
+ private:
    //
    // Event handlers
    //
-
    void OnErase(wxEraseEvent &evt);
    void OnPaint(wxPaintEvent &evt);
    void OnSize(wxSizeEvent &evt);
    void OnMouse(wxMouseEvent &evt);
+   void OnKeyDown(wxKeyEvent &evt);
+   void OnKeyUp(wxKeyEvent &evt);
+   void OnContext(wxContextMenuEvent &evt);
+   void OnSetFocus(wxFocusEvent &evt);
+   void OnKillFocus(wxFocusEvent &evt);
+
+   void OnAudioIOStatus(wxCommandEvent &evt);
 
    void OnMeterUpdate(wxTimerEvent &evt);
 
-   void HandlePaint(wxDC &dc);
-   void HandleLayout();
-
-   //
-   // Pop-up menu handlers
-   //
-
-   void OnDisableMeter(wxCommandEvent &evt);
-   void OnHorizontal(wxCommandEvent &evt);
-   void OnVertical(wxCommandEvent &evt);
-   void OnMulti(wxCommandEvent &evt);
-   void OnEqualizer(wxCommandEvent &evt);
-   void OnWaveform(wxCommandEvent &evt);
-   void OnLinear(wxCommandEvent &evt);
-   void OnDB(wxCommandEvent &evt);
-   void OnClip(wxCommandEvent &evt);
-   void OnMonitor(wxCommandEvent &evt);
-#ifdef AUTOMATED_INPUT_LEVEL_ADJUSTMENT
-   void OnAutomatedInputLevelAdjustment(wxCommandEvent &evt);
-#endif
-   void OnFloat(wxCommandEvent &evt);
-   void OnPreferences(wxCommandEvent &evt);
-   bool IsClipping();
-
-   void StartMonitoring();
-
- private:
+   void HandleLayout(wxDC &dc);
+   void SetActiveStyle(Style style);
+   void SetBarAndClip(int iBar, bool vert);
    void DrawMeterBar(wxDC &dc, MeterBar *meterBar);
    void ResetBar(MeterBar *bar, bool resetClipping);
    void RepaintBarsNow();
-   void CreateIcon(int aquaOffset);
-   wxFont GetFont();
+   wxFont GetFont() const;
 
+   //
+   // Pop-up menu
+   //
+   void ShowMenu(const wxPoint & pos);
+   void OnMonitor(wxCommandEvent &evt);
+   void OnPreferences(wxCommandEvent &evt);
+   void OnMeterPrefsUpdated(wxCommandEvent &evt);
+
+   wxString Key(const wxString & key) const;
+
+   AudacityProject *mProject;
    MeterUpdateQueue mQueue;
    wxTimer          mTimer;
 
    int       mWidth;
    int       mHeight;
 
+   int       mRulerWidth;
+   int       mRulerHeight;
+
    bool      mIsInput;
 
-   Style     mStyle, mSavedStyle;
+   Style     mStyle;
+   Style     mDesiredStyle;
+   bool      mGradient;
    bool      mDB;
    int       mDBRange;
    bool      mDecay;
@@ -227,38 +240,122 @@ class Meter : public wxPanel
    long      mMeterRefreshRate;
    long      mMeterDisabled; //is used as a bool, needs long for easy gPrefs...
 
+   bool      mMonitoring;
+
+   bool      mActive;
+
    int       mNumBars;
    MeterBar  mBar[kMaxMeterBars];
 
    bool      mLayoutValid;
 
    wxBitmap *mBitmap;
-   wxRect    mMenuRect;
-   wxPoint   mIconPos;
+   wxRect    mIconRect;
    wxPoint   mLeftTextPos;
    wxPoint   mRightTextPos;
    wxSize    mLeftSize;
    wxSize    mRightSize;
    wxBitmap *mIcon;
    wxPen     mPen;
-   wxPen     mLightPen;
-   wxPen     mSavedLightPen;
-   wxPen     mDarkPen;
-   wxPen     mSavedDarkPen;
    wxPen     mDisabledPen;
    wxPen     mPeakPeakPen;
    wxBrush   mBrush;
    wxBrush   mRMSBrush;
    wxBrush   mClipBrush;
    wxBrush   mBkgndBrush;
-   wxBrush   mSavedBkgndBrush;
-   wxBrush   mSavedBrush;
-   wxBrush   mSavedRMSBrush;
    wxBrush   mDisabledBkgndBrush;
-   wxRect    mAllBarsRect;
    Ruler     mRuler;
+   wxString  mLeftText;
+   wxString  mRightText;
+
+   bool mIsFocused;
+   wxRect mFocusRect;
+#if defined(__WXMSW__)
+   bool mHadKeyDown;
+#endif
+
+   bool mAccSilent;
+
+   friend class MeterAx;
 
    DECLARE_EVENT_TABLE()
 };
+
+#if wxUSE_ACCESSIBILITY
+
+class MeterAx: public wxWindowAccessible
+{
+public:
+   MeterAx(wxWindow * window);
+
+   virtual ~ MeterAx();
+
+   // Performs the default action. childId is 0 (the action for this object)
+   // or > 0 (the action for a child).
+   // Return wxACC_NOT_SUPPORTED if there is no default action for this
+   // window (e.g. an edit control).
+   virtual wxAccStatus DoDefaultAction(int childId);
+
+   // Retrieves the address of an IDispatch interface for the specified child.
+   // All objects must support this property.
+   virtual wxAccStatus GetChild(int childId, wxAccessible** child);
+
+   // Gets the number of children.
+   virtual wxAccStatus GetChildCount(int* childCount);
+
+   // Gets the default action for this object (0) or > 0 (the action for a child).
+   // Return wxACC_OK even if there is no action. actionName is the action, or the empty
+   // string if there is no action.
+   // The retrieved string describes the action that is performed on an object,
+   // not what the object does as a result. For example, a toolbar button that prints
+   // a document has a default action of "Press" rather than "Prints the current document."
+   virtual wxAccStatus GetDefaultAction(int childId, wxString *actionName);
+
+   // Returns the description for this object or a child.
+   virtual wxAccStatus GetDescription(int childId, wxString *description);
+
+   // Gets the window with the keyboard focus.
+   // If childId is 0 and child is NULL, no object in
+   // this subhierarchy has the focus.
+   // If this object has the focus, child should be 'this'.
+   virtual wxAccStatus GetFocus(int *childId, wxAccessible **child);
+
+   // Returns help text for this object or a child, similar to tooltip text.
+   virtual wxAccStatus GetHelpText(int childId, wxString *helpText);
+
+   // Returns the keyboard shortcut for this object or child.
+   // Return e.g. ALT+K
+   virtual wxAccStatus GetKeyboardShortcut(int childId, wxString *shortcut);
+
+   // Returns the rectangle for this object (id = 0) or a child element (id > 0).
+   // rect is in screen coordinates.
+   virtual wxAccStatus GetLocation(wxRect& rect, int elementId);
+
+   // Gets the name of the specified object.
+   virtual wxAccStatus GetName(int childId, wxString *name);
+
+   // Returns a role constant.
+   virtual wxAccStatus GetRole(int childId, wxAccRole *role);
+
+   // Gets a variant representing the selected children
+   // of this object.
+   // Acceptable values:
+   // - a null variant (IsNull() returns TRUE)
+   // - a list variant (GetType() == wxT("list"))
+   // - an integer representing the selected child element,
+   //   or 0 if this object is selected (GetType() == wxT("long"))
+   // - a "void*" pointer to a wxAccessible child object
+   virtual wxAccStatus GetSelections(wxVariant *selections);
+
+   // Returns a state constant.
+   virtual wxAccStatus GetState(int childId, long* state);
+
+   // Returns a localized string representing the value for the object
+   // or child.
+   virtual wxAccStatus GetValue(int childId, wxString* strValue);
+
+};
+
+#endif // wxUSE_ACCESSIBILITY
 
 #endif // __AUDACITY_METER__

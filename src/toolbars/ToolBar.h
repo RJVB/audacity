@@ -13,6 +13,8 @@
 #ifndef __AUDACITY_TOOLBAR__
 #define __AUDACITY_TOOLBAR__
 
+#include "../Experimental.h"
+
 #include <wx/defs.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
@@ -33,6 +35,8 @@ class wxWindow;
 class AButton;
 class Grabber;
 class ToolDock;
+
+class ToolBarResizer;
 
 ////////////////////////////////////////////////////////////
 /// class ToolBar
@@ -62,11 +66,16 @@ enum
    TransportBarID,
    ToolsBarID,
    MeterBarID,
+   RecordMeterBarID,
+   PlayMeterBarID,
    MixerBarID,
    EditBarID,
    TranscriptionBarID,
-   SelectionBarID,
    DeviceBarID,
+   SelectionBarID,
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   SpectralSelectionBarID,
+#endif
    ToolBarCount
 };
 
@@ -94,15 +103,19 @@ class ToolBar:public wxPanel
 
    void SetDocked(ToolDock *dock, bool pushed);
 
-   bool Expose(bool show = true);
+   virtual bool Expose(bool show = true);
 
    bool IsResizable();
    bool IsVisible();
    bool IsDocked();
+   bool IsPositioned(){ return mPositioned; };
+   void SetVisible( bool bVisible );
+   void SetPositioned(){ mPositioned = true;};
 
    /// Resizable toolbars should implement this.
    virtual int GetInitialWidth() {return -1;}
    virtual int GetMinToolbarWidth() {return GetInitialWidth();}
+   virtual wxSize GetDockedSize(){ return GetMinSize();}
  protected:
 
    AButton *MakeButton(teBmps eUp,
@@ -116,6 +129,16 @@ class ToolBar:public wxPanel
                        bool processdownevents,
                        wxSize size);
 
+   static
+   void MakeAlternateImages(AButton &button, int idx,
+                            teBmps eUp,
+                            teBmps eDown,
+                            teBmps eHilite,
+                            teBmps eStandardUp,
+                            teBmps eStandardDown,
+                            teBmps eDisabled,
+                            wxSize size);
+   
    void SetButton(bool down, AButton *button);
 
    void MakeMacRecoloredImage(teBmps eBmpOut, teBmps eBmpIn);
@@ -160,36 +183,34 @@ class ToolBar:public wxPanel
 
    void OnErase(wxEraseEvent & event);
    void OnPaint(wxPaintEvent & event);
-   void OnLeftDown(wxMouseEvent & event);
-   void OnLeftUp(wxMouseEvent & event);
-   void OnMotion(wxMouseEvent & event);
-   void OnCaptureLost(wxMouseCaptureLostEvent & event);
 
+ protected:
+   wxString mLabel;
+   wxString mSection;
+   int mType;
  private:
-   bool IsResizeGrabberHit( wxPoint & pos );
    void Init(wxWindow *parent, int type, const wxString & title, const wxString & label);
 
    wxWindow *mParent;
 
    Grabber *mGrabber;
+   ToolBarResizer *mResizer;
+
    wxBoxSizer *mHSizer;
    wxSizerItem *mSpacer;
-
-   wxPoint mResizeStart;
-
-   wxString mLabel;
-   wxString mSection;
-   int mType;
 
    ToolDock *mDock;
 
    bool mVisible;
    bool mResizable;
+   bool mPositioned; // true if position floating determined.
 
  public:
 
    DECLARE_CLASS(ToolBar);
    DECLARE_EVENT_TABLE();
+
+   friend class ToolBarResizer;
 };
 
 #endif

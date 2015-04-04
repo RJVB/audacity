@@ -92,18 +92,20 @@ void AboutDialog::CreateCreditsList()
    AddCredit(wxT("Craig DeForest"), roleContributor);
    AddCredit(wxT("Mitch Golden"), roleContributor);
    AddCredit(wxT("Brian Gunlogson"), roleContributor);
+   AddCredit(wxT("Andrew Hallendorff"), roleContributor);
    AddCredit(wxT("Daniel Horgan"), roleContributor);
    AddCredit(wxT("David Hostetler"), roleContributor);
    AddCredit(wxT("Steve Jolly"), roleContributor);
    AddCredit(wxT("Steven Jones"), roleContributor);
    AddCredit(wxT("Arun Kishore"), roleContributor);
+   AddCredit(wxT("Paul Licameli"), roleContributor);
    AddCredit(wxT("Paul Livesey"), roleContributor);
    AddCredit(wxT("Harvey Lubin"), roleContributor);
    AddCredit(wxT("Greg Mekkes"), roleContributor);
    AddCredit(wxT("Abe Milde"), roleContributor);
    AddCredit(wxT("<a href=\"http://www.paulnasca.com/\">Paul Nasca</a>"), roleContributor);
    AddCredit(wxT("Clayton Otey"), roleContributor);
-   AddCredit(wxT("Andr\u00e9 Pinto"), roleContributor);
+   AddCredit(wxT("Andr\x00e9 Pinto"), roleContributor);
    AddCredit(wxT("Mark Phillips"), roleContributor);
    AddCredit(wxT("Jean Claude Risset"), roleContributor);
    AddCredit(wxT("Edgar-RFT"), roleContributor);
@@ -278,7 +280,7 @@ visit our <a href=\"http://forum.audacityteam.org/\">forum</a>.");
       GetCreditsByRole(roleThanks) +
 
       wxT("<p><br>") + _("<b>Audacity&reg;</b> software is copyright")+
-      wxT("&copy; 1999-2014 Audacity Team.<br>") +
+      wxT("&copy; 1999-2015 Audacity Team.<br>") +
       _("The name <b>Audacity&reg;</b> is a registered trademark of Dominic Mazzoni.") +
       wxT("</center></font></body></html>");
 

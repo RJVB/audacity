@@ -40,6 +40,7 @@
 #include <wx/tokenzr.h>
 #include <wx/intl.h>
 #include <wx/scrolwin.h>
+#include <wx/version.h>
 
 #include "../Effect.h"
 #include "LoadLV2.h"
@@ -51,6 +52,12 @@
 #include "lilv/lilv.h"
 
 #include <wx/arrimpl.cpp>
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// LV2Effect
+//
+///////////////////////////////////////////////////////////////////////////////
 
 WX_DEFINE_OBJARRAY(LV2PortArray);
 
@@ -79,7 +86,7 @@ LV2Effect::LV2Effect(const LilvPlugin *data,
    fInBuffer = NULL;
    fOutBuffer = NULL;
 
-   mLength = 0;
+   mDuration = 0;
 
    // Allocate buffers for the port indices and the default control values
    int numPorts = lilv_plugin_get_num_ports(mData);
@@ -291,6 +298,92 @@ LV2Effect::~LV2Effect()
    }
 }
 
+// ============================================================================
+// IdentInterface implementation
+// ============================================================================
+
+wxString LV2Effect::GetPath()
+{
+   return GetString(lilv_plugin_get_uri(mData));
+}
+
+wxString LV2Effect::GetSymbol()
+{
+   return pluginName;
+}
+
+wxString LV2Effect::GetName()
+{
+   return GetSymbol();
+}
+
+wxString LV2Effect::GetVendor()
+{
+   wxString vendor = GetString(lilv_plugin_get_author_name(mData), true);
+
+   if (vendor.IsEmpty())
+   {
+      vendor = wxT("N/A");
+   }
+
+   return vendor;
+}
+
+wxString LV2Effect::GetVersion()
+{
+   return wxT("N/A");
+}
+
+wxString LV2Effect::GetDescription()
+{
+   return wxT("N/A");
+}
+
+// ============================================================================
+// EffectIdentInterface implementation
+// ============================================================================
+
+EffectType LV2Effect::GetType()
+{
+   // For now, relegate to Effect()
+   return Effect::GetType();
+}
+
+wxString LV2Effect::GetFamily()
+{
+   return LV2EFFECTS_FAMILY;
+}
+
+bool LV2Effect::IsInteractive()
+{
+   // For now, relegate to Effect()
+   return Effect::IsInteractive();
+}
+
+bool LV2Effect::IsDefault()
+{
+   return false;
+}
+
+bool LV2Effect::IsLegacy()
+{
+   return true;
+}
+
+bool LV2Effect::SupportsRealtime()
+{
+   return false;
+}
+
+bool LV2Effect::SupportsAutomation()
+{
+   return true;
+}
+
+// ============================================================================
+// Effect Implementation
+// ============================================================================
+
 wxString LV2Effect::GetEffectName()
 {
    if (mControlInputs.GetCount() > 0)
@@ -386,7 +479,7 @@ bool LV2Effect::PromptUser()
          return false;
       }
 
-      mLength = dlog.GetLength();
+      mDuration = dlog.GetLength();
       mNoteLength = dlog.GetNoteLength();
       mNoteVelocity = dlog.GetNoteVelocity();
       mNoteKey = dlog.GetNoteKey();
@@ -713,6 +806,9 @@ void LV2Effect::End()
    }
 }
 
+// ============================================================================
+// LV2Effect Implementation
+// ============================================================================
 
 bool LV2Effect::IsValid()
 {
@@ -913,10 +1009,10 @@ LV2EffectDialog::LV2EffectDialog(LV2Effect *effect,
    mLength(length)
 {
 
-#if defined(__WXMSW__)
-   // On Windows, for some reason, wxWindows calls OnTextCtrl during creation
+#if defined(__WXMSW__) || (defined(__WXGTK__) && wxCHECK_VERSION(3, 0, 0))
+   // In some environments wxWindows calls OnTextCtrl during creation
    // of the text control, and LV2EffectDialog::OnTextCtrl calls HandleText,
-   // which assumes all the mFields have been initialized.
+   // which assumes all the fields have been initialized.
    // This can give us a bad pointer crash, so manipulate inSlider to
    // no-op HandleText during creation.
    inSlider = true;
@@ -1245,9 +1341,11 @@ LV2EffectDialog::LV2EffectDialog(LV2Effect *effect,
 
 LV2EffectDialog::~LV2EffectDialog()
 {
+   delete [] mToggles;
    delete [] mSliders;
    delete [] mFields;
    delete [] mLabels;
+   delete [] mEnums;
 }
 
 void LV2EffectDialog::OnCheckBox(wxCommandEvent &event)

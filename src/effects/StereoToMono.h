@@ -20,7 +20,7 @@ public:
    EffectStereoToMono();
 
    virtual wxString GetEffectName() {
-      return wxString(_("Stereo to Mono"));
+      return wxString(wxTRANSLATE("Stereo to Mono"));
    }
 
    virtual std::set<wxString> GetEffectCategories() {
@@ -31,7 +31,7 @@ public:
 
    // Used internally, users will not see this.  Do not translate.
    virtual wxString GetEffectIdentifier() {
-      return wxT("StereoToMono");
+      return wxT("Stereo To Mono");
    }
 
    virtual wxString GetEffectAction() {
@@ -40,6 +40,11 @@ public:
    virtual bool Init();
    virtual void End();
    virtual bool CheckWhetherSkipEffect();
+
+   virtual bool PromptUser() {
+      return true;
+   }
+
  protected:
     virtual bool Process();
 

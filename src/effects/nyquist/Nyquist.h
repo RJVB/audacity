@@ -28,6 +28,9 @@
 
 #include <string>
 
+#define NYQUISTEFFECTS_VERSION wxT("1.0.0.0")
+#define NYQUISTEFFECTS_FAMILY wxT("Nyquist")
+
 class NyqControl
 {
  public:
@@ -60,18 +63,26 @@ class AUDACITY_DLL_API EffectNyquist:public Effect
    EffectNyquist(wxString fName);
    virtual ~EffectNyquist();
 
-   bool SetXlispPath();
+   // IdentInterface implementation
 
-   bool LoadedNyFile() {
-      return mOK;
-   }
+   virtual wxString GetPath();
+   virtual wxString GetSymbol();
+   virtual wxString GetName();
+   virtual wxString GetVendor();
+   virtual wxString GetVersion();
+   virtual wxString GetDescription();
 
-   void Continue();
-   void Break();
-   void Stop();
+   // EffectIdentInterface implementation
 
-   void SetCommand(wxString cmd);
-   wxString GetOutput();
+   virtual EffectType GetType();
+   virtual wxString GetFamily();
+   virtual bool IsInteractive();
+   virtual bool IsDefault();
+   virtual bool IsLegacy();
+   virtual bool SupportsRealtime();
+   virtual bool SupportsAutomation();
+
+   // Effect implementation
 
    /** Get the name of the effect (taken from the script that is loaded). Note
     * that this name is currently not translated because the translations system
@@ -112,7 +123,8 @@ class AUDACITY_DLL_API EffectNyquist:public Effect
       return mAction;
    }
 
-   virtual bool PromptUser();
+   virtual bool GeneratorPreview();
+   virtual bool PromptUser(); 
 
    virtual bool Process();
 
@@ -120,9 +132,28 @@ class AUDACITY_DLL_API EffectNyquist:public Effect
    virtual bool SupportsChains();
    virtual bool TransferParameters( Shuttle & shuttle );
 
+   // EffectNyquist implementation
+
+   bool SetXlispPath();
+
+   bool LoadedNyFile() {
+      return mOK;
+   }
+
+   void Continue();
+   void Break();
+   void Stop();
+
+   void SetCommand(wxString cmd);
+   wxString GetOutput();
+
+
+   static wxArrayString GetNyquistSearchPath();
+
  private:
 
    static wxString NyquistToWxString(const char *nyqString);
+   wxString EscapeString(const wxString & inStr);
 
    bool ProcessOne();
 
@@ -172,15 +203,20 @@ class AUDACITY_DLL_API EffectNyquist:public Effect
    wxString          mName;   ///< Name of the Effect
    wxString          mAction;
    wxString          mInfo;
+   wxString          mAuthor;
+   wxString          mCopyright;
+   bool              mEnablePreview;
    bool              mDebug;
    std::string       mDebugOutput;
 
+   int               mVersion;
    NyqControlArray   mControls;
 
    int               mCurNumChannels;
    WaveTrack         *mCurTrack[2];
    sampleCount       mCurStart[2];
    sampleCount       mCurLen;
+   int               mTrackIndex;
    bool              mFirstInGroup;
    double            mOutputTime;
    int               mCount;
@@ -196,6 +232,13 @@ class AUDACITY_DLL_API EffectNyquist:public Effect
    WaveTrack         *mOutputTrack[2];
 
    wxArrayString     mCategories;
+
+   wxString          mProps;
+
+   bool              mRestoreSplits;
+   int               mMergeClips;
+
+   friend class NyquistDialog;
 };
 
 class NyquistDialog:public wxDialog
@@ -205,17 +248,20 @@ class NyquistDialog:public wxDialog
    NyquistDialog(wxWindow * parent, wxWindowID id,
                  const wxString & title,
                  wxString info,
-                 NyqControlArray *controlArray);
+                 bool preview,
+                 EffectNyquist *effect);
 
  private:
+   EffectNyquist    *mEffect;
    NyqControlArray  *mControls;
    bool              mInHandler;
 
    void OnText(wxCommandEvent & event);
    void OnSlider(wxCommandEvent & event);
    void OnChoice( wxCommandEvent &event );
-   void OnOk(wxCommandEvent & event);
+   void OnPreview(wxCommandEvent & event);
    void OnDebug(wxCommandEvent & event);
+   void OnOk(wxCommandEvent & event);
    void OnCancel(wxCommandEvent & event);
 
  private:
@@ -232,13 +278,17 @@ class NyquistInputDialog:public wxDialog
                       wxString initialCommand);
 
    wxString GetCommand();
+   void     OnVersionCheck(wxCommandEvent& evt);
+   int      mVersion;
 
  private:
    wxTextCtrl *mCommandText;
+   wxCheckBox *mVersionCheckBox;
 
    void OnOk(wxCommandEvent & event);
-   void OnDebug(wxCommandEvent & event);
    void OnCancel(wxCommandEvent & event);
+   void OnDebug(wxCommandEvent & event);
+   void OnPreview(wxCommandEvent & event);
 
  private:
    DECLARE_EVENT_TABLE()

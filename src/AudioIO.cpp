@@ -312,7 +312,7 @@ writing audio.
    #define ROUND(x) (int) ((x)+0.5)
    //#include <string.h>
    #include "portmidi.h"
-   #include "common/pa_util.h"
+   #include "../lib-src/portaudio-v19/src/common/pa_util.h"
    #include "NoteTrack.h"
 #endif
 
@@ -325,6 +325,10 @@ using std::max;
 using std::min;
 
 AudioIO *gAudioIO;
+
+DEFINE_EVENT_TYPE(EVT_AUDIOIO_PLAYBACK);
+DEFINE_EVENT_TYPE(EVT_AUDIOIO_CAPTURE);
+DEFINE_EVENT_TYPE(EVT_AUDIOIO_MONITOR);
 
 // static
 int AudioIO::mNextStreamToken = 0;
@@ -491,14 +495,14 @@ void DeinitAudioIO()
 
 wxString DeviceName(const PaDeviceInfo* info)
 {
-   wxString infoName(info->name, wxConvLocal);
+   wxString infoName = wxSafeConvertMB2WX(info->name);
 
    return infoName;
 }
 
 wxString HostName(const PaDeviceInfo* info)
 {
-   wxString hostapiName(Pa_GetHostApiInfo(info->hostApi)->name, wxConvLocal);
+   wxString hostapiName = wxSafeConvertMB2WX(Pa_GetHostApiInfo(info->hostApi)->name);
 
    return hostapiName;
 }
@@ -542,7 +546,6 @@ AudioIO::AudioIO()
    mLastSilentBufSize = 0;
 
    mStreamToken = 0;
-   mStopStreamCount = 0;
 
    mLastPaError = paNoError;
 
@@ -554,6 +557,10 @@ AudioIO::AudioIO()
    mListener = NULL;
    mUpdateMeters = false;
    mUpdatingMeters = false;
+
+   mOwningProject = NULL;
+   mInputMeter = NULL;
+   mOutputMeter = NULL;
 
    PaError err = Pa_Initialize();
 
@@ -606,6 +613,8 @@ AudioIO::AudioIO()
    mMixerOutputVol = 1.0;
    mInputMixerWorks = false;
 #endif
+
+   mLastPlaybackTimeMillis = 0;
 }
 
 AudioIO::~AudioIO()
@@ -626,6 +635,7 @@ AudioIO::~AudioIO()
 #ifdef EXPERIMENTAL_MIDI_OUT
    Pm_Terminate();
    mMidiThread->Delete();
+   delete mMidiThread;
 #endif
 
    /* Delete is a "graceful" way to stop the thread.
@@ -722,7 +732,7 @@ wxArrayString AudioIO::GetInputSourceNames()
    {
       int numSources = Px_GetNumInputSources(mPortMixer);
       for( int source = 0; source < numSources; source++ )
-         deviceNames.Add(wxString(Px_GetInputSourceName(mPortMixer, source), wxConvLocal));
+         deviceNames.Add(wxString(wxSafeConvertMB2WX(Px_GetInputSourceName(mPortMixer, source))));
    }
    else
    {
@@ -958,6 +968,10 @@ bool AudioIO::StartPortAudioStream(double sampleRate,
    mNumPauseFrames = 0;
    mPauseTime = 0;
 #endif
+   mOwningProject = GetActiveProject();
+   mInputMeter = NULL;
+   mOutputMeter = NULL;
+
    mLastPaError = paNoError;
    // pick a rate to do the audio I/O at, from those available. The project
    // rate is suggested, but we may get something else if it isn't supported
@@ -1009,6 +1023,8 @@ bool AudioIO::StartPortAudioStream(double sampleRate,
             playbackDeviceInfo->defaultLowOutputLatency;
       else
          playbackParameters->suggestedLatency = latencyDuration/1000.0;
+
+      mOutputMeter = mOwningProject->GetPlaybackMeter();
    }
 
    if( numCaptureChannels > 0)
@@ -1041,7 +1057,12 @@ bool AudioIO::StartPortAudioStream(double sampleRate,
             captureDeviceInfo->defaultHighInputLatency;
       else
          captureParameters->suggestedLatency = latencyDuration/1000.0;
+
+      mInputMeter = mOwningProject->GetCaptureMeter();
    }
+
+   SetMeters();
+
 #ifdef EXPERIMENTAL_MIDI_OUT
    if (numPlaybackChannels == 0 && numCaptureChannels == 0)
       return true;
@@ -1113,6 +1134,11 @@ void AudioIO::StartMonitoring(double sampleRate)
    // TODO: Check return value of success.
    (void)success;
 
+   wxCommandEvent e(EVT_AUDIOIO_MONITOR);
+   e.SetEventObject(mOwningProject);
+   e.SetInt(true);
+   wxTheApp->ProcessEvent(e);
+
    // Now start the PortAudio stream!
    mLastPaError = Pa_StartStream( mPortStreamV19 );
 }
@@ -1127,7 +1153,8 @@ int AudioIO::StartStream(WaveTrackArray playbackTracks,
                          AudioIOListener* listener,
                          bool playLooped /* = false */,
                          double cutPreviewGapStart /* = 0.0 */,
-                         double cutPreviewGapLen /* = 0.0 */)
+                         double cutPreviewGapLen, /* = 0.0 */
+                         const double *pStartTime /* = 0 */)
 {
    if( IsBusy() )
       return 0;
@@ -1169,8 +1196,6 @@ int AudioIO::StartStream(WaveTrackArray playbackTracks,
 
    mTimeTrack = timeTrack;
    mListener = listener;
-   mInputMeter = NULL;
-   mOutputMeter = NULL;
    mRate    = sampleRate;
    mT0      = t0;
    mT1      = t1;
@@ -1358,9 +1383,49 @@ int AudioIO::StartStream(WaveTrackArray playbackTracks,
        }
    } while(!bDone);
 
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+   if (mNumPlaybackChannels > 0)
+   {
+      EffectManager & em = EffectManager::Get();
+      em.RealtimeInitialize();
+
+      // The following adds a new effect processor for each logical track and the
+      // group determination should mimic what is done in audacityAudioCallback()
+      // when calling RealtimeProcess().
+      int group = 0;
+      for (size_t i = 0, cnt = mPlaybackTracks.GetCount(); i < cnt; i++)
+      {
+         WaveTrack *vt = gAudioIO->mPlaybackTracks[i];
+
+         int chanCnt = 1;
+         if (vt->GetLinked())
+         {
+            i++;
+            chanCnt++;
+         }
+
+         em.RealtimeAddProcessor(group++, chanCnt, vt->GetRate());
+      }
+   }
+#endif
+
 #ifdef AUTOMATED_INPUT_LEVEL_ADJUSTMENT
    AILASetStartTime();
 #endif
+
+   if (pStartTime)
+   {
+      // Calculate the new time position
+      mTime = std::max(mT0, std::min(mT1, *pStartTime));
+      // Reset mixer positions for all playback tracks
+      unsigned numMixers = mPlaybackTracks.GetCount();
+      for (unsigned ii = 0; ii < numMixers; ++ii)
+         mPlaybackMixers[ii]->Reposition(mTime);
+      if(mTimeTrack)
+         mWarpedTime = mTimeTrack->ComputeWarpedLength(mT0, mTime);
+      else
+         mWarpedTime = mTime - mT0;
+   }
 
    // We signal the audio thread to call FillBuffers, to prime the RingBuffers
    // so that they will have data in them when the stream starts.  Having the
@@ -1395,6 +1460,22 @@ int AudioIO::StartStream(WaveTrackArray playbackTracks,
       }
    }
 
+   if (mNumPlaybackChannels > 0)
+   {
+      wxCommandEvent e(EVT_AUDIOIO_PLAYBACK);
+      e.SetEventObject(mOwningProject);
+      e.SetInt(true);
+      wxTheApp->ProcessEvent(e);
+   }
+
+   if (mNumCaptureChannels > 0)
+   {
+      wxCommandEvent e(EVT_AUDIOIO_CAPTURE);
+      e.SetEventObject(mOwningProject);
+      e.SetInt(true);
+      wxTheApp->ProcessEvent(e);
+   }
+
    mAudioThreadFillBuffersLoopRunning = true;
 #ifdef EXPERIMENTAL_MIDI_OUT
    // If audio is not running, mNumFrames will not be incremented and
@@ -1419,6 +1500,13 @@ int AudioIO::StartStream(WaveTrackArray playbackTracks,
 
 void AudioIO::StartStreamCleanup(bool bOnlyBuffers)
 {
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+   if (mNumPlaybackChannels > 0)
+   {
+      EffectManager::Get().RealtimeFinalize();
+   }
+#endif
+
    if(mPlaybackBuffers)
    {
       for( unsigned int i = 0; i < mPlaybackTracks.GetCount(); i++ )
@@ -1523,10 +1611,10 @@ bool AudioIO::StartPortMidiStream()
          const PmDeviceInfo *info = Pm_GetDeviceInfo(i);
          if (!info) continue;
          if (!info->output) continue;
-         wxString interf(info->interf, wxConvLocal);
-         wxString name(info->name, wxConvLocal);
+         wxString interf = wxSafeConvertMB2WX((info->interf);
+         wxString name = wxSafeConvertMB2WX(info->name);
          interf.Append(wxT(": ")).Append(name);
-        if (wxStrcmp(interf, playbackDeviceName) == 0) {
+         if (wxStrcmp(interf, playbackDeviceName) == 0) {
             playbackDevice = i;
          }
       }
@@ -1559,11 +1647,37 @@ bool AudioIO::StartPortMidiStream()
 }
 #endif
 
-void AudioIO::SetMeters(Meter *inputMeter, Meter *outputMeter)
+bool AudioIO::IsAvailable(AudacityProject *project)
 {
-   mInputMeter = inputMeter;
-   mOutputMeter = outputMeter;
+   return mOwningProject == NULL || mOwningProject == project;
+}
 
+void AudioIO::SetCaptureMeter(AudacityProject *project, Meter *meter)
+{
+   if (!mOwningProject || mOwningProject == project)
+   {
+      mInputMeter = meter;
+      if (mInputMeter)
+      {
+         mInputMeter->Reset(mRate, true);
+      }
+   }
+}
+
+void AudioIO::SetPlaybackMeter(AudacityProject *project, Meter *meter)
+{
+   if (!mOwningProject || mOwningProject == project)
+   {
+      mOutputMeter = meter;
+      if (mOutputMeter)
+      {
+         mOutputMeter->Reset(mRate, true);
+      }
+   }
+}
+
+void AudioIO::SetMeters()
+{
    if (mInputMeter)
       mInputMeter->Reset(mRate, true);
    if (mOutputMeter)
@@ -1593,12 +1707,15 @@ void AudioIO::StopStream()
      )
       return;
 
-   // Avoid race condition by making sure this function only
-   // gets called once at a time
-   mStopStreamCount++; // <- note that this is not atomic, therefore has
-                       // a race condition -RBD
-   if (mStopStreamCount != 1)
-      return;
+   wxMutexLocker locker(mSuspendAudioThread);
+
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+   // No longer need effects processing
+   if (mNumPlaybackChannels > 0)
+   {
+      EffectManager::Get().RealtimeFinalize();
+   }
+#endif
 
    //
    // We got here in one of two ways:
@@ -1657,6 +1774,21 @@ void AudioIO::StopStream()
       mPortStreamV19 = NULL;
    }
 
+   if (mNumPlaybackChannels > 0)
+   {
+      wxCommandEvent e(EVT_AUDIOIO_PLAYBACK);
+      e.SetEventObject(mOwningProject);
+      e.SetInt(false);
+      wxTheApp->ProcessEvent(e);
+   }
+
+   if (mNumCaptureChannels > 0)
+   {
+      wxCommandEvent e(mStreamToken == 0 ? EVT_AUDIOIO_MONITOR : EVT_AUDIOIO_CAPTURE);
+      e.SetEventObject(mOwningProject);
+      e.SetInt(false);
+      wxTheApp->ProcessEvent(e);
+   }
 
 #ifdef EXPERIMENTAL_MIDI_OUT
    /* Stop Midi playback */
@@ -1810,10 +1942,13 @@ void AudioIO::StopStream()
    if (mOutputMeter)
       mOutputMeter->Reset(mRate, false);
 
-   AudacityProject* pProj = GetActiveProject();
-   MixerBoard* pMixerBoard = pProj->GetMixerBoard();
+   MixerBoard* pMixerBoard = mOwningProject->GetMixerBoard();
    if (pMixerBoard)
       pMixerBoard->ResetMeters(false);
+
+   mInputMeter = NULL;
+   mOutputMeter = NULL;
+   mOwningProject = NULL;
 
    if (mListener && mNumCaptureChannels > 0)
       mListener->OnAudioIOStopRecording();
@@ -1822,11 +1957,27 @@ void AudioIO::StopStream()
    // Only set token to 0 after we're totally finished with everything
    //
    mStreamToken = 0;
-   mStopStreamCount = 0;
+
+   mNumCaptureChannels = 0;
+   mNumPlaybackChannels = 0;
 }
 
 void AudioIO::SetPaused(bool state)
 {
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+   if (state != mPaused)
+   {
+      if (state)
+      {
+         EffectManager::Get().RealtimeSuspend();
+      }
+      else
+      {
+         EffectManager::Get().RealtimeResume();
+      }
+   }
+#endif
+
    mPaused = state;
 }
 
@@ -2307,7 +2458,7 @@ int AudioIO::getRecordSourceIndex(PxMixer *portMixer)
    wxString sourceName = gPrefs->Read(wxT("/AudioIO/RecordingSource"), wxT(""));
    int numSources = Px_GetNumInputSources(portMixer);
    for (i = 0; i < numSources; i++) {
-      if (sourceName == wxString(Px_GetInputSourceName(portMixer, i), wxConvLocal))
+      if (sourceName == wxString(wxSafeConvertMB2WX(Px_GetInputSourceName(portMixer, i))))
          return i;
    }
    return -1;
@@ -2328,7 +2479,7 @@ int AudioIO::getPlayDevIndex(wxString devName)
    for (hostNum = 0; hostNum < hostCnt; hostNum++)
    {
       const PaHostApiInfo *hinfo = Pa_GetHostApiInfo(hostNum);
-      if (hinfo && wxString(hinfo->name, wxConvLocal) == hostName)
+      if (hinfo && wxString(wxSafeConvertMB2WX(hinfo->name)) == hostName)
       {
          for (PaDeviceIndex hostDevice = 0; hostDevice < hinfo->deviceCount; hostDevice++)
          {
@@ -2381,7 +2532,7 @@ int AudioIO::getRecordDevIndex(wxString devName)
    for (hostNum = 0; hostNum < hostCnt; hostNum++)
    {
       const PaHostApiInfo *hinfo = Pa_GetHostApiInfo(hostNum);
-      if (hinfo && wxString(hinfo->name, wxConvLocal) == hostName)
+      if (hinfo && wxString(wxSafeConvertMB2WX(hinfo->name)) == hostName)
       {
          for (PaDeviceIndex hostDevice = 0; hostDevice < hinfo->deviceCount; hostDevice++)
          {
@@ -2413,6 +2564,9 @@ int AudioIO::getRecordDevIndex(wxString devName)
    //      And I can't imagine how far we'll get specifying an "invalid" index later
    //      on...are we certain "0" even exists?
    if (deviceNum < 0) {
+      // JKC: This ASSERT will happen if you run with no config file
+      // This happens once.  Config file will exist on the next run.
+      // TODO: Look into this a bit more.  Could be relevant to blank Device Toolbar.
       wxASSERT(false);
       deviceNum = 0;
    }
@@ -2598,7 +2752,7 @@ wxString AudioIO::GetDeviceInfo()
 
       cnt = Px_GetNumMixers(stream);
       for (int i = 0; i < cnt; i++) {
-         wxString name(Px_GetMixerName(stream, i), wxConvLocal);
+         wxString name = wxSafeConvertMB2WX(Px_GetMixerName(stream, i));
          s << i << wxT(" - ") << name << e;
       }
 
@@ -2606,7 +2760,7 @@ wxString AudioIO::GetDeviceInfo()
       s << wxT("Available recording sources:") << e;
       cnt = Px_GetNumInputSources(PortMixer);
       for (int i = 0; i < cnt; i++) {
-         wxString name(Px_GetInputSourceName(PortMixer, i), wxConvLocal);
+         wxString name = wxSafeConvertMB2WX(Px_GetInputSourceName(PortMixer, i));
          s << i << wxT(" - ") << name << e;
       }
 
@@ -2614,7 +2768,7 @@ wxString AudioIO::GetDeviceInfo()
       s << wxT("Available playback volumes:") << e;
       cnt = Px_GetNumOutputVolumes(PortMixer);
       for (int i = 0; i < cnt; i++) {
-         wxString name(Px_GetOutputVolumeName(PortMixer, i), wxConvLocal);
+         wxString name = wxSafeConvertMB2WX(Px_GetOutputVolumeName(PortMixer, i));
          s << i << wxT(" - ") << name << e;
       }
 
@@ -3279,7 +3433,14 @@ static void DoSoftwarePlaythrough(const void *inputBuffer,
 
 int audacityAudioCallback(const void *inputBuffer, void *outputBuffer,
                           unsigned long framesPerBuffer,
+// If there were more of these conditionally used arguments, it 
+// could make sense to make a new macro that looks like this:
+// USEDIF( EXPERIMENTAL_MIDI_OUT, timeInfo )
+#ifdef EXPERIMENTAL_MIDI_OUT
+                          const PaStreamCallbackTimeInfo *timeInfo,
+#else
                           const PaStreamCallbackTimeInfo * WXUNUSED(timeInfo),
+#endif
                           const PaStreamCallbackFlags WXUNUSED(statusFlags), void * WXUNUSED(userData) )
 {
    int numPlaybackChannels = gAudioIO->mNumPlaybackChannels;
@@ -3408,6 +3569,12 @@ int audacityAudioCallback(const void *inputBuffer, void *outputBuffer,
 
          if (gAudioIO->mSeek)
          {
+            int token = gAudioIO->mStreamToken;
+            wxMutexLocker locker(gAudioIO->mSuspendAudioThread);
+            if (token != gAudioIO->mStreamToken)
+               // This stream got destroyed while we waited for it
+               return paAbort;
+
             // Pause audio thread and wait for it to finish
             gAudioIO->mAudioThreadFillBuffersLoopRunning = false;
             while( gAudioIO->mAudioThreadFillBuffersLoopActive == true )
@@ -3457,9 +3624,28 @@ int audacityAudioCallback(const void *inputBuffer, void *outputBuffer,
             if( gAudioIO->mMidiPlaybackTracks[t]->GetSolo() )
                numSolo++;
 #endif
-         for( t = 0; t < numPlaybackTracks; t++)
+
+         WaveTrack **chans = (WaveTrack **) alloca(numPlaybackChannels * sizeof(WaveTrack *));
+         float **tempBufs = (float **) alloca(numPlaybackChannels * sizeof(float *));
+         for (int c = 0; c < numPlaybackChannels; c++)
+         {
+            tempBufs[c] = (float *) alloca(framesPerBuffer * sizeof(float));
+         }
+
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+         EffectManager & em = EffectManager::Get();
+         em.RealtimeProcessStart();
+#endif
+
+         bool selected = false;
+         int group = 0;
+         int chanCnt = 0;
+         float rate = 0.0;
+         for (t = 0; t < numPlaybackTracks; t++)
          {
             WaveTrack *vt = gAudioIO->mPlaybackTracks[t];
+
+            chans[chanCnt] = vt;
 
             if (linkFlag)
                linkFlag = false;
@@ -3474,22 +3660,40 @@ int audacityAudioCallback(const void *inputBuffer, void *outputBuffer,
                if (vt->GetMute() && !vt->GetSolo())
                   cut = true;
 
+               rate = vt->GetRate();
                linkFlag = vt->GetLinked();
+               selected = vt->GetSelected();
+
+               // If we have a mono track, clear the right channel
+               if (!linkFlag)
+               {
+                  memset(tempBufs[1], 0, framesPerBuffer * sizeof(float));
+               }
             }
 
 #define ORIGINAL_DO_NOT_PLAY_ALL_MUTED_TRACKS_TO_END
 #ifdef ORIGINAL_DO_NOT_PLAY_ALL_MUTED_TRACKS_TO_END
+            int len = 0;
             // this is original code prior to r10680 -RBD
             if (cut)
-               {
-                  gAudioIO->mPlaybackBuffers[t]->Discard(framesPerBuffer);
-                  continue;
-               }
+            {
+               gAudioIO->mPlaybackBuffers[t]->Discard(framesPerBuffer);
+               // keep going here.  
+               // we may still need to issue a paComplete.
+            }
+            else
+            {
+               len = gAudioIO->mPlaybackBuffers[t]->Get((samplePtr)tempBufs[chanCnt],
+                                                         floatSample,
+                                                         (int)framesPerBuffer);
+               chanCnt++;
+            }
 
-            unsigned int len = (unsigned int)
-               gAudioIO->mPlaybackBuffers[t]->Get((samplePtr)tempFloats,
-                                                  floatSample,
-                                                  (int)framesPerBuffer);
+
+            if (linkFlag)
+            {
+               continue;
+            }
 #else
             // This code was reorganized so that if all audio tracks
             // are muted, we still return paComplete when the end of
@@ -3513,6 +3717,14 @@ int audacityAudioCallback(const void *inputBuffer, void *outputBuffer,
                                                      (int)framesPerBuffer);
             }
 #endif
+
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+            if( !cut && selected )
+            {
+               len = em.RealtimeProcess(group, chanCnt, tempBufs, len);
+            }
+            group++;
+#endif
             // If our buffer is empty and the time indicator is past
             // the end, then we've actually finished playing the entire
             // selection.
@@ -3522,48 +3734,60 @@ int audacityAudioCallback(const void *inputBuffer, void *outputBuffer,
             {
                callbackReturn = paComplete;
             }
-#ifndef ORIGINAL_DO_NOT_PLAY_ALL_MUTED_TRACKS_TO_END
+
             if (cut) // no samples to process, they've been discarded
                continue;
+
+            for (int c = 0; c < chanCnt; c++)
+            {
+               vt = chans[c];
+
+               if (vt->GetChannel() == Track::LeftChannel ||
+                   vt->GetChannel() == Track::MonoChannel)
+               {
+                  float gain = vt->GetChannelGain(0);
+
+                  // Output volume emulation: possibly copy meter samples, then
+                  // apply volume, then copy to the output buffer
+                  if (outputMeterFloats != outputFloats)
+                     for (int i = 0; i < len; ++i)
+                        outputMeterFloats[numPlaybackChannels*i] +=
+                           gain*tempFloats[i];
+
+                  if (gAudioIO->mEmulateMixerOutputVol)
+                     gain *= gAudioIO->mMixerOutputVol;
+
+                  for(int i=0; i<len; i++)
+                     outputFloats[numPlaybackChannels*i] += gain*tempBufs[c][i];
+               }
+
+               if (vt->GetChannel() == Track::RightChannel ||
+                   vt->GetChannel() == Track::MonoChannel)
+               {
+                  float gain = vt->GetChannelGain(1);
+
+                  // Output volume emulation (as above)
+                  if (outputMeterFloats != outputFloats)
+                     for (int i = 0; i < len; ++i)
+                        outputMeterFloats[numPlaybackChannels*i+1] +=
+                           gain*tempFloats[i];
+
+                  if (gAudioIO->mEmulateMixerOutputVol)
+                     gain *= gAudioIO->mMixerOutputVol;
+
+                  for(int i=0; i<len; i++)
+                     outputFloats[numPlaybackChannels*i+1] += gain*tempBufs[c][i];
+               }
+            }
+
+            chanCnt = 0;
+         }
+
+#if defined(EXPERIMENTAL_REALTIME_EFFECTS)
+         em.RealtimeProcessEnd();
 #endif
 
-            if (vt->GetChannel() == Track::LeftChannel ||
-                vt->GetChannel() == Track::MonoChannel)
-            {
-               float gain = vt->GetChannelGain(0);
-
-               // Output volume emulation: possibly copy meter samples, then
-               // apply volume, then copy to the output buffer
-               if (outputMeterFloats != outputFloats)
-                  for (i = 0; i < len; ++i)
-                     outputMeterFloats[numPlaybackChannels*i] +=
-                        gain*tempFloats[i];
-
-               if (gAudioIO->mEmulateMixerOutputVol)
-                  gain *= gAudioIO->mMixerOutputVol;
-
-               for(i=0; i<len; i++)
-                  outputFloats[numPlaybackChannels*i] += gain*tempFloats[i];
-            }
-
-            if (vt->GetChannel() == Track::RightChannel ||
-                vt->GetChannel() == Track::MonoChannel)
-            {
-               float gain = vt->GetChannelGain(1);
-
-               // Output volume emulation (as above)
-               if (outputMeterFloats != outputFloats)
-                  for (i = 0; i < len; ++i)
-                     outputMeterFloats[numPlaybackChannels*i+1] +=
-                        gain*tempFloats[i];
-
-               if (gAudioIO->mEmulateMixerOutputVol)
-                  gain *= gAudioIO->mMixerOutputVol;
-
-               for(i=0; i<len; i++)
-                  outputFloats[numPlaybackChannels*i+1] += gain*tempFloats[i];
-            }
-         }
+         gAudioIO->mLastPlaybackTimeMillis = ::wxGetLocalTimeMillis();
 
          //
          // Clip output to [-1.0,+1.0] range (msmeyer)

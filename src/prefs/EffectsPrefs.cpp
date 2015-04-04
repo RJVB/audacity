@@ -23,6 +23,7 @@
 
 #include "../AudacityApp.h"
 #include "../Languages.h"
+#include "../PluginManager.h"
 #include "../Prefs.h"
 #include "../ShuttleGui.h"
 
@@ -58,7 +59,7 @@ void EffectsPrefs::PopulateOrExchange(ShuttleGui & S)
 
 #if USE_AUDIO_UNITS
       S.TieCheckBox(_("Audio Unit"),
-                    wxT("/AudioUnits/Enable"),
+                    wxT("/AudioUnit/Enable"),
                     true);
 #endif
 
@@ -91,38 +92,58 @@ void EffectsPrefs::PopulateOrExchange(ShuttleGui & S)
                     wxT("/VST/Enable"),
                     true);
 #endif
-
-      S.AddFixedText(_("Restart Audacity to apply changes."));
    }
    S.EndStatic();
 
-#if USE_AUDIO_UNITS
-   S.StartStatic(_("Audio Unit Effects"));
+   S.StartStatic(_("Effect Options"));
    {
-      S.TieCheckBox(_("Display Audio Unit effects in Graphical Mode"),
-                    wxT("/AudioUnits/GUI"),
-                    true);
-#if 0
-      S.TieCheckBox(_("Rescan VST effects next time Audacity is started"),
-                    wxT("/VST/Rescan"),
-                    false);
-#endif
-   }
-   S.EndStatic();
-#endif
+      S.StartMultiColumn(2);
+      {
+         wxArrayString visualgroups;
+         wxArrayString prefsgroups;
+      
+         visualgroups.Add(_("Sorted by Effect Name"));
+         visualgroups.Add(_("Sorted by Publisher and Effect Name"));
+         visualgroups.Add(_("Sorted by Type and Effect Name"));
+         visualgroups.Add(_("Grouped by Publisher"));
+         visualgroups.Add(_("Grouped by Type"));
+      
+         prefsgroups.Add(wxT("sortby:name"));
+         prefsgroups.Add(wxT("sortby:publisher:name"));
+         prefsgroups.Add(wxT("sortby:type:name"));
+         prefsgroups.Add(wxT("groupby:publisher"));
+         prefsgroups.Add(wxT("groupby:type"));
 
-#if USE_VST
-   S.StartStatic(_("VST Effects"));
-   {
-      S.TieCheckBox(_("&Display VST effects in Graphical Mode"),
-                    wxT("/VST/GUI"),
-                    true);
-      S.TieCheckBox(_("&Rescan VST effects next time Audacity is started"),
-                    wxT("/VST/Rescan"),
-                    false);
+         wxChoice *c = S.TieChoice(_("Effects in menus are:"),
+                                   wxT("/Effects/GroupBy"),
+                                   wxT("name"),
+                                   visualgroups,
+                                   prefsgroups);
+         c->SetMinSize(c->GetBestSize());
+                     
+         S.TieNumericTextBox(_("Maximum effects per group (0 to disable):"),
+                             wxT("/Effects/MaxPerGroup"),
+#if defined(__WXGTK__)
+                             15,
+#else
+                             0,
+#endif
+                             5);
+      }
+      S.EndMultiColumn();
    }
    S.EndStatic();
-#endif
+
+   S.StartStatic(_("Plugin Options"));
+   {
+      S.TieCheckBox(_("Check for updated plugins when Audacity starts"),
+                     wxT("/Plugins/CheckForUpdates"),
+                     true);
+      S.TieCheckBox(_("Rescan plugins next time Audacity is started"),
+                     wxT("/Plugins/Rescan"),
+                     false);
+   }
+   S.EndStatic();
 
 #ifdef EXPERIMENTAL_EQ_SSE_THREADED
    S.StartStatic(_("Instruction Set"));
@@ -133,7 +154,6 @@ void EffectsPrefs::PopulateOrExchange(ShuttleGui & S)
    }
    S.EndStatic();
 #endif
-
 }
 
 bool EffectsPrefs::Apply()

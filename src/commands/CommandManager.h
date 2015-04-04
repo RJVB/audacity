@@ -20,6 +20,8 @@
 #include "../AudacityApp.h"
 #include "../xml/XMLTagHandler.h"
 
+#include "audacity/Types.h"
+
 class AUDACITY_DLL_API CommandFunctor
 {
 public:
@@ -56,6 +58,7 @@ struct CommandListEntry
    int count;
    bool enabled;
    bool wantevent;
+   bool isMeta;
    wxUint32 flags;
    wxUint32 mask;
 };
@@ -144,6 +147,10 @@ class AUDACITY_DLL_API CommandManager: public XMLTagHandler
                    unsigned int flags = NoFlagsSpecifed,
                    unsigned int mask = NoFlagsSpecifed);
 
+   void AddMetaCommand(const wxChar *name,
+                       const wxChar *label,
+                       CommandFunctor *callback,
+                       const wxChar *accel);
    //
    // Command masks
    //
@@ -184,6 +191,7 @@ class AUDACITY_DLL_API CommandManager: public XMLTagHandler
    bool HandleCommandEntry(CommandListEntry * entry, wxUint32 flags, wxUint32 mask, const wxEvent * evt = NULL);
    bool HandleMenuID(int id, wxUint32 flags, wxUint32 mask);
    bool HandleKey(wxKeyEvent &evt, wxUint32 flags, wxUint32 mask);
+   bool HandleMeta(wxKeyEvent &evt);
    bool HandleTextualCommand(wxString & Str, wxUint32 flags, wxUint32 mask);
    void TellUserWhyDisallowed(wxUint32 flagsGot, wxUint32 flagsRequired);
 

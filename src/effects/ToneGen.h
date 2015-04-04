@@ -14,7 +14,6 @@
 #define __AUDACITY_EFFECT_TONEGEN__
 
 #include "Generator.h"
-#include "../widgets/TimeTextCtrl.h"
 #include "../Experimental.h"
 
 #include <wx/dialog.h>
@@ -22,6 +21,7 @@
 class wxString;
 class wxChoice;
 class wxTextCtrl;
+class NumericTextCtrl;
 class ShuttleGui;
 
 #define __UNINITIALIZED__ (-1)
@@ -37,7 +37,7 @@ class EffectToneGen : public BlockGenerator {
    EffectToneGen & EnableForChirps(){mbChirp=true;return *this;};
 
    virtual wxString GetEffectName() {
-      return wxString(mbChirp? _("Chirp..."):_("Tone..."));
+      return wxString(mbChirp? wxTRANSLATE("Chirp..."):wxTRANSLATE("Tone..."));
    }
 
    virtual std::set<wxString> GetEffectCategories() {
@@ -52,6 +52,11 @@ class EffectToneGen : public BlockGenerator {
 
    virtual wxString GetEffectAction() {
       return wxString(mbChirp? _("Generating Chirp") : _("Generating Tone"));
+   }
+
+   // Return true if the effect supports processing via batch chains.
+   virtual bool SupportsChains() {
+      return false;
    }
 
    // Useful only after PromptUser values have been set.
@@ -126,7 +131,7 @@ class ToneGenDialog:public EffectDialog {
    wxArrayString *interpolations;
 
  private:
-   TimeTextCtrl *mToneDurationT;
+   NumericTextCtrl *mToneDurationT;
 };
 
 #endif

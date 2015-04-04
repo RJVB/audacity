@@ -27,14 +27,14 @@ FileIO::FileIO(const wxString name, FileIOMode mode)
 
       if (mMode == FileIO::Input) {
          mInputStream = new wxFFileInputStream(mName);
-         if (mInputStream == NULL) {
+         if (mInputStream == NULL || !mInputStream->IsOk()) {
             wxPrintf(wxT("Couldn't get input stream: %s\n"), name.c_str());
             return;
          }
       }
       else {
          mOutputStream = new wxFFileOutputStream(mName);
-         if (mOutputStream == NULL) {
+         if (mOutputStream == NULL || !mOutputStream->IsOk()) {
             wxPrintf(wxT("Couldn't get output stream: %s\n"), name.c_str());
             return;
          }
@@ -76,6 +76,7 @@ void FileIO::Close()
 void FileIO::SetCatalogInfo()
 {
 #ifdef __WXMAC__
+#if !wxCHECK_VERSION(3, 0, 0)
    if (!mOpen ) {
       return;
    }
@@ -91,13 +92,19 @@ void FileIO::SetCatalogInfo()
 
    SetCatalogInfo(type);
 #endif
+#endif
 
    return;
 }
 
+#if defined(__WXMAC__)
 void FileIO::SetCatalogInfo(wxUint32 type)
+#else
+void FileIO::SetCatalogInfo(wxUint32 WXUNUSED(type))
+#endif
 {
 #ifdef __WXMAC__
+#if !wxCHECK_VERSION(3, 0, 0)
    if (!mOpen ) {
       return;
    }
@@ -105,6 +112,7 @@ void FileIO::SetCatalogInfo(wxUint32 type)
    wxFileName fn(mName);
 
    fn.MacSetTypeAndCreator(type, AUDACITY_CREATOR);
+#endif
 #endif
 
    return;

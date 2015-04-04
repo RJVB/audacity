@@ -38,6 +38,9 @@ void AddEffectsToMenu(CommandManager* c, const EffectSet& effects);
 
 #endif
 
+void PopulateEffectsMenu(CommandManager *c, EffectType type, int batchflags, int realflags);
+void AddEffectMenuItems(CommandManager *c, EffectPlugs & plugs, int batchflags, int realflags, bool isDefault);
+void AddEffectMenuItemGroup(CommandManager *c, const wxArrayString & names, const PluginIDList & plugs, const wxArrayInt & flags, bool isDefault);
 void CreateRecentFilesMenu(CommandManager *c);
 void ModifyUndoMenuItems();
 void ModifyToolbarMenus();
@@ -51,7 +54,7 @@ double NearestZeroCrossing(double t0);
 
 public:
 //Adds label and returns index of label in labeltrack.
-int DoAddLabel(double left, double right);
+int DoAddLabel(const SelectedRegion& region);
 
 private:
 
@@ -85,7 +88,7 @@ void OnSeekRightLong();
 
         // Different posibilities for playing sound
 
-bool MakeReadyToPlay(); // Helper function that sets button states etc.
+bool MakeReadyToPlay(bool loop = false, bool cutpreview = false); // Helper function that sets button states etc.
 void OnPlayStop();
 void OnPlayStopSelect();
 void OnPlayOneSecond();
@@ -124,6 +127,8 @@ void OnInputGainDec();
         // Transcription control
 
 void OnPlayAtSpeed();
+void OnPlayAtSpeedLooped();
+void OnPlayAtSpeedCutPreview();
 void OnSetPlaySpeed();
 void OnPlaySpeedInc();
 void OnPlaySpeedDec();
@@ -238,6 +243,12 @@ void OnDisjoinLabels();
 
 void OnSelectAll();
 void OnSelectNone();
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+void OnToggleSpectralSelection();
+void DoNextPeakFrequency(bool up);
+void OnNextHigherPeakFrequency();
+void OnNextLowerPeakFrequency();
+#endif
 void OnSelectCursorEnd();
 void OnSelectStartCursor();
 void OnSelectSyncLockSel();
@@ -276,8 +287,13 @@ void OnShowTransportToolBar();
 void OnShowDeviceToolBar();
 void OnShowEditToolBar();
 void OnShowMeterToolBar();
+void OnShowRecordMeterToolBar();
+void OnShowPlayMeterToolBar();
 void OnShowMixerToolBar();
 void OnShowSelectionToolBar();
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+void OnShowSpectralSelectionToolBar();
+#endif
 void OnShowToolsToolBar();
 void OnShowTranscriptionToolBar();
 void OnResetToolBars();
@@ -307,8 +323,7 @@ void OnMixAndRenderToNewTrack();
 void HandleMixAndRender(bool toNewTrack);
 
 private:
-double mSel0save;
-double mSel1save;
+SelectedRegion mRegionSave;
 public:
 void OnSelectionSave();
 void OnSelectionRestore();
@@ -342,16 +357,13 @@ void OnEditLabels();
 
         // Effect Menu
 
-bool OnEffect(int type, Effect * f, wxString params = wxEmptyString, bool saveState = true);
-void OnEffect(int type, int index);
-void OnGenerateEffect(int index);
-void OnGeneratePlugin(int index);
+bool OnEffect(int type, const PluginID & ID, wxString params = wxEmptyString, bool saveState = true);
+void OnEffect(const PluginID & pluginID);
+void OnEffect(const PluginID & pluginID, bool configured = false);
 void OnRepeatLastEffect(int index);
+#ifdef EFFECT_CATEGORIES
 void OnProcessAny(int index);
-void OnProcessEffect(int index);
-void OnProcessPlugin(int index);
-void OnAnalyzeEffect(int index);
-void OnAnalyzePlugin(int index);
+#endif
 void OnApplyChain();
 void OnEditChains();
 void OnStereoToMono(int index);
@@ -376,6 +388,9 @@ void OnSeparator();
 
 void PrevFrame();
 void NextFrame();
+
+void PrevWindow();
+void NextWindow();
 
 void OnResample();
 

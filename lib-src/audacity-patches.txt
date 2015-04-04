@@ -42,6 +42,7 @@ arguments ([-Wall foreign]) added to AM_INIT_AUTOMAKE to avoid autoreconf
 failures
 arguments (--no-verify) removed from ltconfig execution to prevent configure
 failures
+Patches: libid3tag-srcdir.patch  Adds srcdir handling
 
 libmad
 ------
@@ -90,6 +91,7 @@ Patches: endian.m4, lrint.m4, llrint.m4, lrintf.m4, clip_mode.m4 copied from
 		 signal.m4 created out of the tail of acinclude.m4 with the remaining
 		 	necessary macro
          autotools.patch: Fix autotools warnings.
+         libsndfile-srcdir.patch: Add srcdir handling
 AM_MAINTAINER_MODE has been added to configure.ac to disable autotools rebuilds
 by default
 Upstream Version: 0.1.8
@@ -121,6 +123,7 @@ Version in Audacity SVN: 0.1.1
 Patches: 
    * "libsoxr/configure" file: modified cmake params
    * add-make-check-support.patch: Add a check target for GNU Autotools integration.
+   * libsoxr-srcdir.patch: Adds srcdir handling
 Upstream Version: 0.1.1
 
 libvamp
@@ -129,6 +132,7 @@ Library to load and use VAMP plug-ins. http://www.vamp-plugins.org/
 Version in Audacity SVN: 2.5
 Patches: fix-linkage-against-dl.patch: Fix linkage against dl for hostsdk library.
          fix-all-target.patch: Fix all target to not build disabled targets.
+         libvamp-srcdir.patch: Adds srcdir handling
 Upstream Version: 2.5
 
 libvorbis
@@ -184,7 +188,7 @@ Patches:
 ../portmixer/portaudio.patch	add features needed to make portmixer work
 		Integration by upstream in progress. Will need updating as upstream
 		portaudio moves
-
+portaudio-srcdir.patch  Adds srcdir handling
 portaudio-v19/wasapi-fix.patch  Patch to WASAPI hostapi that corrects incorrect
 reporting of stream open/running/closed state.
 
@@ -244,6 +248,7 @@ https://sourceforge.net/tracker/index.php?func=detail&aid=2561247&group_id=17779
 because attachements there don't seem to work.
 autotools.patch: Fix all autotools warnings.
 autotools-fix-make-dist.patch: Correct file lists to make dist target work.
+sbsms-srcdir.patch: Adds srcdir handling
 
 soundtouch
 ----------

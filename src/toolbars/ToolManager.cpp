@@ -47,10 +47,6 @@
 #include <wx/minifram.h>
 #include <wx/popupwin.h>
 
-#if defined(__WXMAC__)
-#include <wx/mac/uma.h>
-#endif
-
 #include "ToolManager.h"
 #include "ControlToolBar.h"
 #include "DeviceToolBar.h"
@@ -58,11 +54,13 @@
 #include "MeterToolBar.h"
 #include "MixerToolBar.h"
 #include "SelectionBar.h"
+#include "SpectralSelectionBar.h"
 #include "ToolsToolBar.h"
 #include "TranscriptionToolBar.h"
 
 #include "../AColor.h"
 #include "../AllThemeResources.h"
+#include "../AudioIO.h"
 #include "../ImageManipulation.h"
 #include "../Prefs.h"
 #include "../Project.h"
@@ -133,7 +131,7 @@ class ToolFrame:public wxFrame
          width += sizerW;
       }
 
-      SetSize( width + 2, bar->GetMinSize().y + 2 );
+      SetSize( width + 2, bar->GetDockedSize().y + 2 );
 
       // Attach the sizer and resize the window to fit
       SetSizer( s );
@@ -408,12 +406,17 @@ ToolManager::ToolManager( AudacityProject *parent )
    // Create all of the toolbars
    mBars[ ToolsBarID ]         = new ToolsToolBar();
    mBars[ TransportBarID ]     = new ControlToolBar();
-   mBars[ MeterBarID ]         = new MeterToolBar();
+   mBars[ RecordMeterBarID ]   = new MeterToolBar( parent, RecordMeterBarID );
+   mBars[ PlayMeterBarID ]     = new MeterToolBar( parent, PlayMeterBarID );
+   mBars[ MeterBarID ]         = new MeterToolBar( parent, MeterBarID );
    mBars[ EditBarID ]          = new EditToolBar();
    mBars[ MixerBarID ]         = new MixerToolBar();
    mBars[ TranscriptionBarID ] = new TranscriptionToolBar();
    mBars[ SelectionBarID ]     = new SelectionBar();
    mBars[ DeviceBarID ]        = new DeviceToolBar();
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+   mBars[SpectralSelectionBarID] = new SpectralSelectionBar();
+#endif
 
    // We own the timer
    mTimer.SetOwner( this );
@@ -466,29 +469,30 @@ void ToolManager::Reset()
 {
    int ndx;
 
-   // The mInputMeter and mOutputMeter may be in use if audio is playing
-   // when this happens.
-   gAudioIO->SetMeters( NULL, NULL );
-
    // Disconnect all docked bars
-   for( ndx = 0; ndx < ToolBarCount; ndx++ )
+   for( ndx = 0; ndx < ToolBarCount; ndx++ ) 
    {
-      wxWindow *parent;
+      wxWindow *floater;
       ToolDock *dock;
       ToolBar *bar = mBars[ ndx ];
+      bool expose = true;
 
       // Disconnect the bar
       if( bar->IsDocked() )
       {
          bar->GetDock()->Undock( bar );
-         parent = NULL;
+         floater = NULL;
       }
       else
       {
-         parent = bar->GetParent();
+         floater = bar->GetParent();
       }
 
-      if( ndx == SelectionBarID )
+      if (ndx == SelectionBarID 
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+         || ndx == SpectralSelectionBarID
+#endif
+         )
       {
          dock = mBotDock;
 
@@ -508,14 +512,49 @@ void ToolManager::Reset()
          bar->SetSize(bar->GetBestFittingSize());
       }
 #endif
-      dock->Dock( bar );
 
-      Expose( ndx, true );
-
-      if( parent )
+      if( ndx == MeterBarID
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+         || ndx == SpectralSelectionBarID
+#endif
+         )
       {
-         parent->Destroy();
+         expose = false;
       }
+
+      if( dock != NULL )
+      {
+         // when we dock, we reparent, so bar is no longer a child of floater.
+         dock->Dock( bar );
+         Expose( ndx, expose );
+         //OK (and good) to delete floater, as bar is no longer in it.
+         if( floater )
+            floater->Destroy();
+      }
+      else
+      {
+         // The (tool)bar has a dragger window round it, the floater.
+         // in turn floater will have mParent (the entire App) as its
+         // parent.
+
+         // Maybe construct a new floater
+         // this happens if we have just been bounced out of a dock.
+         if( floater == NULL ) {
+            floater = new ToolFrame( mParent, this, bar, wxPoint(-1,-1) );
+            bar->Reparent( floater );
+         }
+
+         // This bar is undocked and invisible.
+         // We are doing a reset toolbars, so even the invisible undocked bars should
+         // be moved somewhere sensible. Put bar near center of window.
+         // If there were multiple hidden toobars the ndx * 10 adjustment means 
+         // they won't overlap too much.
+         floater->CentreOnParent( );
+         floater->Move( floater->GetPosition() + wxSize( ndx * 10 - 200, ndx * 10 ));
+         bar->SetDocked( NULL, false );
+         Expose( ndx, false );
+      }
+
    }
    // TODO:??
    // If audio was playing, we stopped the VU meters,
@@ -561,19 +600,40 @@ void ToolManager::ReadConfig()
    for( ndx = 0; ndx < ToolBarCount; ndx++ )
    {
       ToolBar *bar = mBars[ ndx ];
+      //wxPoint Center = mParent->GetPosition() + (mParent->GetSize() * 0.33);
+      //wxPoint Center( 
+      //   wxSystemSettings::GetMetric( wxSYS_SCREEN_X ) /2 ,
+      //   wxSystemSettings::GetMetric( wxSYS_SCREEN_Y ) /2 );
 
       // Change to the bar subkey
       gPrefs->SetPath( bar->GetSection() );
 
+      bool bShownByDefault = true;
+      int defaultDock = TopDockID;
+      
+      if( ndx == SelectionBarID )
+         defaultDock = BotDockID;
+      if( ndx == MeterBarID )
+         bShownByDefault = false;
+
+#ifdef EXPERIMENTAL_SPECTRAL_EDITING
+      if( ndx == SpectralSelectionBarID ){
+         defaultDock = BotDockID;
+         bShownByDefault = false; // Only show if asked for.  
+      }
+#endif
+
       // Read in all the settings
-      gPrefs->Read( wxT("Dock"), &dock, ndx == SelectionBarID ? BotDockID : TopDockID );
+      gPrefs->Read( wxT("Dock"), &dock,  defaultDock );
       gPrefs->Read( wxT("Order"), &ord, NoBarID );
-      gPrefs->Read( wxT("Show"), &show[ ndx ], true );
+      gPrefs->Read( wxT("Show"), &show[ ndx ], bShownByDefault);
 
       gPrefs->Read( wxT("X"), &x, -1 );
       gPrefs->Read( wxT("Y"), &y, -1 );
       gPrefs->Read( wxT("W"), &width[ ndx ], -1 );
       gPrefs->Read( wxT("H"), &height[ ndx ], -1 );
+
+      bar->SetVisible( show[ ndx ] );
 
       // Docked or floating?
       if( dock )
@@ -591,6 +651,13 @@ void ToolManager::ReadConfig()
          else
          {
             bar->Create( mBotDock );
+         }
+
+         // Set the width and height
+         if( width[ ndx ] != -1 && height[ ndx ] != -1 )
+         {
+            wxSize sz( width[ ndx ], height[ ndx ] );
+            bar->SetSize( sz );
          }
 
 #ifdef EXPERIMENTAL_SYNC_LOCK
@@ -637,6 +704,8 @@ void ToolManager::ReadConfig()
       {
          // Create the bar (with the top dock being temporary parent)
          bar->Create( mTopDock );
+         
+
 
          // Construct a new floater
          ToolFrame *f = new ToolFrame( mParent, this, bar, wxPoint( x, y ) );
@@ -648,13 +717,15 @@ void ToolManager::ReadConfig()
             f->SetSizeHints( sz );
             f->SetSize( sz );
             f->Layout();
+            if( (x!=-1) && (y!=-1) )
+               bar->SetPositioned();
          }
-
-         // Show or hide it
-         bar->Expose( show[ ndx ] );
 
          // Inform toolbar of change
          bar->SetDocked( NULL, false );
+
+         // Show or hide it
+         Expose( ndx, show[ ndx ] );
       }
 
       // Change back to the bar root
@@ -681,12 +752,9 @@ void ToolManager::ReadConfig()
 
             // Dock it
             d->Dock( t );
-
-            // Hide the bar
-            if( !show[ t->GetId() ] )
-            {
-               d->ShowHide( t->GetId() );
-            }
+            
+            // Show or hide it
+            Expose( t->GetId(), show[ t->GetId() ] );
          }
       }
 
@@ -698,11 +766,8 @@ void ToolManager::ReadConfig()
          // Dock it
          d->Dock( t );
 
-         // Hide the bar
-         if( !show[ t->GetId() ] )
-         {
-            d->ShowHide( t->GetId() );
-         }
+         // Show or hide the bar
+         Expose( t->GetId(), show[ t->GetId() ] );
       }
    }
 
@@ -744,13 +809,13 @@ void ToolManager::WriteConfig()
       int bo = mBotDock->GetOrder( bar );
 
       // Save
-      gPrefs->Write( wxT("Dock"), to ? TopDockID : bo ? BotDockID : NoDockID );
+      gPrefs->Write( wxT("Dock"), (int) (to ? TopDockID : bo ? BotDockID : NoDockID ));
       gPrefs->Write( wxT("Order"), to + bo );
       gPrefs->Write( wxT("Show"), IsVisible( ndx ) );
 
       wxPoint pos( -1, -1 );
       wxSize sz = bar->GetSize();
-      if( !bar->IsDocked() )
+      if( !bar->IsDocked() && bar->IsPositioned() )
       {
          pos = bar->GetParent()->GetPosition();
          sz = bar->GetParent()->GetSize();
@@ -842,17 +907,7 @@ bool ToolManager::IsVisible( int type )
 //
 void ToolManager::ShowHide( int type )
 {
-   ToolBar *t = mBars[ type ];
-
-   // Handle docked and floaters differently
-   if( t->IsDocked() )
-   {
-      t->GetDock()->ShowHide( type );
-   }
-   else
-   {
-      t->Expose( !t->IsVisible() );
-   }
+   Expose( type, !mBars[ type ]->IsVisible() );
 }
 
 //
@@ -921,7 +976,7 @@ void ToolManager::OnMouse( wxMouseEvent & event )
 
    // Retrieve the event position
    wxPoint pos =
-      ( (wxWindow *)event.GetEventObject() )->ClientToScreen( event.GetPosition() );
+      ( (wxWindow *)event.GetEventObject() )->ClientToScreen( event.GetPosition() ) - mDragOffset;
 
    // Button was released...finish the drag
    if( !event.LeftIsDown() )
@@ -962,7 +1017,7 @@ void ToolManager::OnMouse( wxMouseEvent & event )
    else if( event.Dragging() && pos != mLastPos )
    {
       // Make toolbar follow the mouse
-      mDragWindow->Move( pos - mDragOffset );
+      mDragWindow->Move( pos  );
 
       // Remember to prevent excessive movement
       mLastPos = pos;
@@ -978,16 +1033,22 @@ void ToolManager::OnMouse( wxMouseEvent & event )
       br.SetBottom( br.GetBottom() + 20 );
       br.SetPosition( mBotDock->GetParent()->ClientToScreen( br.GetPosition() ) );
 
-      // Is mouse pointer within either dock?
+
+      // Add half the bar height.  We could use the actual bar height, but that would be confusing as a 
+      // bar removed at a place might not dock back there if just let go.
+      // Also add 5 pixels in horizontal direction, so that a click without a move (or a very small move) 
+      // lands back where we started.
+      pos +=  wxPoint( 5, 20 ); 
+
+
+      // To find which dock, rather than test against pos, test against the whole dragger rect.
+      // This means it is enough to overlap the dock to dock with it.
+      wxRect barRect = mDragWindow->GetRect();
       ToolDock *dock = NULL;
-      if( tr.Contains( pos ) )
-      {
+      if( tr.Intersects( barRect ) )
          dock = mTopDock;
-      }
-      else if( br.Contains( pos ) )
-      {
+      else if( br.Intersects( barRect ) )
          dock = mBotDock;
-      }
 
       // Looks like we have a winner...
       if( dock )
@@ -1007,7 +1068,7 @@ void ToolManager::OnMouse( wxMouseEvent & event )
             mIndicator->Hide();
 
             // Decide which direction the arrow should point
-            if( r.GetBottom() >= dr.GetHeight() )
+            if( r.GetTop() >= dr.GetHeight() )
             {
                p.x = dr.GetLeft() + ( dr.GetWidth() / 2 );
                p.y = dr.GetBottom() - mDown->GetBox().GetHeight();
@@ -1016,8 +1077,8 @@ void ToolManager::OnMouse( wxMouseEvent & event )
             else
             {
                p.x = dr.GetLeft() + r.GetLeft();
-               p.y = dr.GetTop() + r.GetTop() +
-                     ( ( r.GetHeight() - mLeft->GetBox().GetHeight() ) / 2 );
+               p.y = dr.GetTop() + r.GetTop() + mLeft->GetBox().GetHeight() / 2;
+                     //JKC ( ( r.GetHeight() - mLeft->GetBox().GetHeight() ) / 2 );
                mCurrent = mLeft;
             }
 
@@ -1175,6 +1236,7 @@ void ToolManager::OnGrabber( GrabberEvent & event )
 
       // Inform toolbar of change
       mDragBar->SetDocked( NULL, true );
+      mDragBar->SetPositioned();
 
       // Construct a new floater
       mDragWindow = new ToolFrame( mParent, this, mDragBar, mp );

@@ -107,11 +107,16 @@ const int effEditOpen = 14;
 const int effEditClose = 15;
 const int effEditIdle = 19;
 const int effEditTop = 20;
+const int effIdentify = 22; // from http://www.asseca.org/vst-24-specs/efIdentify.html
 const int effGetChunk = 23; // from Ardour
 const int effSetChunk = 24; // from Ardour
 const int effProcessEvents = 25;
+// The next one was gleaned from http://www.asseca.org/vst-24-specs/efCanBeAutomated.html
+const int effCanBeAutomated = 26;
 // The next one was gleaned from http://www.kvraudio.com/forum/viewtopic.php?p=1905347
 const int effGetProgramNameIndexed = 29;
+// The next one was gleaned from http://www.asseca.org/vst-24-specs/efGetPlugCategory.html
+const int effGetPlugCategory = 35;
 const int effGetEffectName = 45;
 const int effGetParameterProperties = 56; // missing
 const int effGetVendorString = 47;
@@ -121,6 +126,17 @@ const int effCanDo = 51; // currently unused
 // The next one was gleaned from http://www.asseca.org/vst-24-specs/efIdle.html
 const int effIdle = 53;
 const int effGetVstVersion = 58; // currently unused
+// The next one was gleaned from http://www.asseca.org/vst-24-specs/efBeginSetProgram.html
+const int effBeginSetProgram = 67;
+// The next one was gleaned from http://www.asseca.org/vst-24-specs/efEndSetProgram.html
+const int effEndSetProgram = 68;
+// The next one was gleaned from http://www.asseca.org/vst-24-specs/efShellGetNextPlugin.html
+const int effShellGetNextPlugin = 70;
+// The next one was gleaned from http://www.asseca.org/vst-24-specs/efBeginLoadBank.html
+const int effBeginLoadBank = 75;
+// The next one was gleaned from http://www.asseca.org/vst-24-specs/efBeginLoadProgram.html
+const int  effBeginLoadProgram = 76;
+
 // The next two were gleaned from http://www.kvraudio.com/forum/printview.php?t=143587&start=0
 const int effStartProcess = 71;
 const int effStopProcess = 72;
@@ -277,8 +293,7 @@ public:
    void *user;
    // Id 48-4b
    int32_t uniqueID;
-   // Don't know 4c-4f
-   char unknown1[4];
+   int32_t version;
    // processReplacing 50-53
    void (* processReplacing)( AEffect * , float * * , float * * , int );
 
@@ -334,5 +349,32 @@ enum VstParameterFlags
    kVstParameterCanRamp                 = 1 << 6   // set if parameter value can ramp up/down
 };
 
+// from http://www.asseca.org/vst-24-specs/efBeginLoadProgram.html
+struct VstPatchChunkInfo
+{
+   int32_t version;           // Format Version (should be 1)
+   int32_t pluginUniqueID;    // UniqueID of the plug-in
+   int32_t pluginVersion;     // Plug-in Version
+   int32_t numElements;       // Number of Programs (Bank) or Parameters (Program)
+   char future[48];           // Reserved for future use
+};
+
+// from http://www.asseca.org/vst-24-specs/efGetPlugCategory.html
+enum VstPlugCategory
+{
+  kPlugCategUnknown = 0,    // 0=Unknown, category not implemented
+  kPlugCategEffect,         // 1=Simple Effect
+  kPlugCategSynth,          // 2=VST Instrument (Synths, samplers,...)
+  kPlugCategAnalysis,       // 3=Scope, Tuner, ...
+  kPlugCategMastering,      // 4=Dynamics, ...
+  kPlugCategSpacializer,    // 5=Panners, ...
+  kPlugCategRoomFx,         // 6=Delays and Reverbs
+  kPlugSurroundFx,          // 7=Dedicated surround processor
+  kPlugCategRestoration,    // 8=Denoiser, ...
+  kPlugCategOfflineProcess, // 9=Offline Process
+  kPlugCategShell,          // 10=Plug-in is container of other plug-ins  @see effShellGetNextPlugin()
+  kPlugCategGenerator,      // 11=ToneGenerator, ...
+  kPlugCategMaxCount        // 12=Marker to count the categories
+};
 
 #endif

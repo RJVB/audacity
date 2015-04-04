@@ -33,6 +33,7 @@
 
 #include "DeviceToolBar.h"
 #include "ToolDock.h"
+#include "../TrackPanel.h"
 
 #include "../AColor.h"
 #include "../AllThemeResources.h"
@@ -59,6 +60,8 @@ END_EVENT_TABLE()
 DeviceToolBar::DeviceToolBar()
 : ToolBar(DeviceBarID, _("Device"), wxT("Device"), true)
 {
+   mPlayBitmap = NULL;
+   mRecordBitmap = NULL;
 }
 
 DeviceToolBar::~DeviceToolBar()
@@ -72,8 +75,14 @@ void DeviceToolBar::Create(wxWindow *parent)
    ToolBar::Create(parent);
 
    // Simulate a size event to set initial meter placement/size
+#if wxCHECK_VERSION(3, 0, 0)
+   wxSizeEvent event(GetSize(), GetId());
+   event.SetEventObject(this);
+   GetEventHandler()->ProcessEvent(event);
+#else
    wxSizeEvent dummy;
    OnSize(dummy);
+#endif
 }
 
 void DeviceToolBar::RecreateTipWindows()
@@ -82,9 +91,6 @@ void DeviceToolBar::RecreateTipWindows()
 
 void DeviceToolBar::DeinitChildren()
 {
-   mPlayBitmap    = NULL;
-   mRecordBitmap  = NULL;
-
    mInput         = NULL;
    mOutput        = NULL;
    mInputChannels = NULL;
@@ -103,22 +109,9 @@ void DeviceToolBar::Populate()
 
    Add(mHost, 0, wxALIGN_CENTER);
 
-   // Output device
-   mPlayBitmap = new wxBitmap(theTheme.Bitmap(bmpSpeaker));
-   Add(new wxStaticBitmap(this,
-                          wxID_ANY,
-                          *mPlayBitmap), 0, wxALIGN_CENTER);
-
-   mOutput = new wxChoice(this,
-                               wxID_ANY,
-                               wxDefaultPosition,
-                               wxDefaultSize);
-   /* i18n-hint: (noun) It's the device used for playback.*/
-   mOutput->SetName(_("Playback Device"));
-   Add(mOutput, 0, wxALIGN_CENTER);
-
    // Input device
-   mRecordBitmap = new wxBitmap(theTheme.Bitmap(bmpMic));
+   if( mRecordBitmap == NULL )
+      mRecordBitmap = new wxBitmap(theTheme.Bitmap(bmpMic));
 
    Add(new wxStaticBitmap(this,
                           wxID_ANY,
@@ -138,6 +131,24 @@ void DeviceToolBar::Populate()
                          wxDefaultSize);
    mInputChannels->SetName(_("Recording Channels"));
    Add(mInputChannels, 0, wxALIGN_CENTER);
+
+   // Output device
+   if( mPlayBitmap == NULL )
+      mPlayBitmap = new wxBitmap(theTheme.Bitmap(bmpSpeaker));
+   Add(new wxStaticBitmap(this,
+                          wxID_ANY,
+                          *mPlayBitmap), 0, wxALIGN_CENTER);
+
+   mOutput = new wxChoice(this,
+                               wxID_ANY,
+                               wxDefaultPosition,
+                               wxDefaultSize);
+   /* i18n-hint: (noun) It's the device used for playback.*/
+   mOutput->SetName(_("Playback Device"));
+   Add(mOutput, 0, wxALIGN_CENTER);
+
+
+
 
    mHost->Connect(wxEVT_SET_FOCUS,
                  wxFocusEventHandler(DeviceToolBar::OnFocus),
@@ -205,15 +216,15 @@ void DeviceToolBar::OnCaptureKey(wxCommandEvent &event)
    int keyCode = kevent->GetKeyCode();
 
    // Pass UP/DOWN/LEFT/RIGHT through for input/output choice
-   if (FindFocus() == mOutput && (keyCode == WXK_LEFT || keyCode == WXK_RIGHT
-                                 || keyCode == WXK_UP || keyCode == WXK_DOWN)) {
-      return;
-   }
    if (FindFocus() == mInput && (keyCode == WXK_LEFT || keyCode == WXK_RIGHT
                                  || keyCode == WXK_UP || keyCode == WXK_DOWN)) {
       return;
    }
 
+   if (FindFocus() == mOutput && (keyCode == WXK_LEFT || keyCode == WXK_RIGHT
+                                 || keyCode == WXK_UP || keyCode == WXK_DOWN)) {
+      return;
+   }
    event.Skip();
 
    return;
@@ -244,7 +255,7 @@ void DeviceToolBar::UpdatePrefs()
    if (sourceName == wxT(""))
       desc = devName;
    else
-      desc = devName + wxString(": ", wxConvLocal) + sourceName;
+      desc = devName + wxT(": ") + sourceName;
 
    if (mInput->GetStringSelection() != desc &&
        mInput->FindString(desc) != wxNOT_FOUND) {
@@ -274,7 +285,7 @@ void DeviceToolBar::UpdatePrefs()
    if (sourceName == wxT(""))
       desc = devName;
    else
-      desc = devName + wxString(": ", wxConvLocal) + sourceName;
+      desc = devName + wxT(": ") + sourceName;
 
    if (mOutput->GetStringSelection() != desc &&
        mOutput->FindString(desc) != wxNOT_FOUND) {
@@ -396,7 +407,6 @@ static bool RepositionCombo(wxWindow *combo, int toolbarWidth, wxSize desiredSiz
    desiredSize.x -= marginPixels;
 
    combo->SetMinSize(desiredSize);
-   combo->SetMaxSize(desiredSize);
 
    return constrained;
 }
@@ -491,6 +501,9 @@ void DeviceToolBar::FillHosts()
 
    if (hosts.GetCount() == 0)
       mHost->Enable(false);
+
+   mHost->InvalidateBestSize();
+   mHost->SetMaxSize(mHost->GetBestSize());
 }
 
 void DeviceToolBar::FillHostDevices()
@@ -532,12 +545,15 @@ void DeviceToolBar::FillHostDevices()
          foundHostIndex = inMaps[0].hostIndex;
    }
 
+   // Make sure in/out are clear in case no host was found
+   mInput->Clear();
+   mOutput->Clear();
+
    // If we still have no host it means no devices, in which case do nothing.
    if (foundHostIndex == -1)
       return;
 
    // Repopulate the Input/Output device list available to the user
-   mInput->Clear();
    for (i = 0; i < inMaps.size(); i++) {
       if (foundHostIndex == inMaps[i].hostIndex) {
          mInput->Append(MakeDeviceSourceString(&inMaps[i]));
@@ -550,7 +566,9 @@ void DeviceToolBar::FillHostDevices()
    }
    mInput->Enable(mInput->GetCount() ? true : false);
 
-   mOutput->Clear();
+   mInput->InvalidateBestSize();
+   mInput->SetMaxSize(mInput->GetBestSize());
+
    for (i = 0; i < outMaps.size(); i++) {
       if (foundHostIndex == outMaps[i].hostIndex) {
          mOutput->Append(MakeDeviceSourceString(&outMaps[i]));
@@ -563,6 +581,9 @@ void DeviceToolBar::FillHostDevices()
       }
    }
    mOutput->Enable(mOutput->GetCount() ? true : false);
+
+   mOutput->InvalidateBestSize();
+   mOutput->SetMaxSize(mOutput->GetBestSize());
 
    // The setting of the Device is left up to OnChoice
 }
@@ -618,7 +639,7 @@ void DeviceToolBar::FillInputChannels()
                name = _("2 (Stereo) Recording Channels");
             }
             else {
-               name = wxString::Format(wxT("%d"), j + 1);
+               name = wxString::Format(wxT("%d"), (int) j + 1);
             }
             mInputChannels->Append(name);
          }
@@ -635,7 +656,11 @@ void DeviceToolBar::FillInputChannels()
    }
    if (index == -1)
       mInputChannels->Enable(false);
+
+   mInputChannels->InvalidateBestSize();
+   mInputChannels->SetMaxSize(mInputChannels->GetBestSize());
 }
+
 void DeviceToolBar::SetDevices(const DeviceSourceMap *in, const DeviceSourceMap *out)
 {
    if (in) {

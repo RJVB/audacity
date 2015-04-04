@@ -27,6 +27,7 @@
 #include <wx/intl.h>
 #endif // WX_PRECOMP
 
+#include "../Envelope.h"
 #include "TranscriptionToolBar.h"
 
 #include "ControlToolBar.h"
@@ -83,7 +84,7 @@ END_EVENT_TABLE()
 TranscriptionToolBar::TranscriptionToolBar()
 : ToolBar(TranscriptionBarID, _("Transcription"), wxT("Transcription"))
 {
-   mPlaySpeed = 1.0;
+   mPlaySpeed = 1.0 * 100.0;
    mTimeTrack = NULL;
 #ifdef EXPERIMENTAL_VOICE_DETECTION
    mVk = new VoiceKey();
@@ -161,6 +162,16 @@ AButton *TranscriptionToolBar::AddButton(
    return r;
 }
 
+void TranscriptionToolBar::MakeAlternateImages(
+   teBmps eFore, teBmps eDisabled,
+   int id, unsigned altIdx)
+{
+   ToolBar::MakeAlternateImages(*mButtons[id], altIdx,
+      bmpRecoloredUpSmall, bmpRecoloredDownSmall, bmpRecoloredHiliteSmall,
+      eFore, eFore, eDisabled,
+      theTheme.ImageSize( bmpRecoloredUpSmall ));
+}
+
 void TranscriptionToolBar::Populate()
 {
 // Very similar to code in ControlToolBar...
@@ -169,6 +180,9 @@ void TranscriptionToolBar::Populate()
 
    AddButton(bmpPlay,     bmpPlayDisabled,   TTB_PlaySpeed,
       _("Play at selected speed"));
+   MakeAlternateImages(bmpLoop, bmpLoopDisabled, TTB_PlaySpeed, 1);
+   MakeAlternateImages(bmpCutPreview, bmpCutPreviewDisabled, TTB_PlaySpeed, 2);
+   mButtons[TTB_PlaySpeed]->FollowModifierKeys();
 
    //Add a slider that controls the speed of playback.
    const int SliderWidth=100;
@@ -178,7 +192,7 @@ void TranscriptionToolBar::Populate()
                                   wxDefaultPosition,
                                   wxSize(SliderWidth,25),
                                   SPEED_SLIDER);
-   mPlaySpeedSlider->Set(1.0);
+   mPlaySpeedSlider->Set(mPlaySpeed / 100.0);
    mPlaySpeedSlider->SetLabel(_("Playback Speed"));
    //  6 steps using page up/down, and 60 using arrow keys
    mPlaySpeedSlider->SetScroll(0.16667f, 1.6667f);
@@ -385,7 +399,8 @@ void TranscriptionToolBar::GetSamples(WaveTrack *t, sampleCount *s0, sampleCount
    *slen = ss1 - ss0;
 }
 
-void TranscriptionToolBar::OnPlaySpeed(wxCommandEvent & WXUNUSED(event))
+// Come here from button clicks, or commands
+void TranscriptionToolBar::PlayAtSpeed(bool looped, bool cutPreview)
 {
    // Can't do anything without an active project
    AudacityProject * p = GetActiveProject();
@@ -426,10 +441,20 @@ void TranscriptionToolBar::OnPlaySpeed(wxCommandEvent & WXUNUSED(event))
 #endif
       p->GetControlToolBar()->PlayPlayRegion(playRegionStart,
                                              playRegionEnd,
-                                             false,
-                                             false,
+                                             looped,
+                                             cutPreview,
                                              mTimeTrack);
    }
+}
+
+// Come here from button clicks only
+void TranscriptionToolBar::OnPlaySpeed(wxCommandEvent & WXUNUSED(event))
+{
+   // Let control have precedence over shift
+   const bool cutPreview = mButtons[TTB_PlaySpeed]->WasControlDown();
+   const bool looped = !cutPreview &&
+      mButtons[TTB_PlaySpeed]->WasShiftDown();
+   PlayAtSpeed(looped, cutPreview);
 }
 
 void TranscriptionToolBar::OnSpeedSlider(wxCommandEvent& WXUNUSED(event))
@@ -795,7 +820,7 @@ void TranscriptionToolBar::OnAutomateSelection(wxCommandEvent & WXUNUSED(event))
                //Increment
                start = newEnd;
 
-               p->DoAddLabel(newStartPos, newEndPos);
+               p->DoAddLabel(SelectedRegion(newStartPos, newEndPos));
                p->RedrawProject();
             }
          SetButton(false, mButtons[TTB_AutomateSelection]);
@@ -806,7 +831,7 @@ void TranscriptionToolBar::OnMakeLabel(wxCommandEvent & WXUNUSED(event))
 {
    AudacityProject *p = GetActiveProject();
    SetButton(false, mButtons[TTB_MakeLabel]);
-   p->DoAddLabel(p->GetSel0(),  p->GetSel1());
+   p->DoAddLabel(SelectedRegion(p->GetSel0(),  p->GetSel1()));
 }
 
 //This returns a double z-score between 0 and 10.
@@ -866,18 +891,30 @@ void TranscriptionToolBar::SetKeyType(wxCommandEvent & WXUNUSED(event))
 
 }
 
-void TranscriptionToolBar::PlayAtSpeed()
-{
-   wxCommandEvent e;
-   OnPlaySpeed(e);
-}
-
 void TranscriptionToolBar::ShowPlaySpeedDialog()
 {
    mPlaySpeedSlider->ShowDialog();
    mPlaySpeedSlider->Refresh();
    wxCommandEvent e;
    OnSpeedSlider(e);
+}
+
+void TranscriptionToolBar::SetEnabled(bool enabled)
+{
+   mButtons[TTB_PlaySpeed]->SetEnabled(enabled);
+}
+
+void TranscriptionToolBar::SetPlaying(bool down, bool looped, bool cutPreview)
+{
+   AButton *const button = mButtons[TTB_PlaySpeed];
+   if (down) {
+      button->SetAlternateIdx(cutPreview ? 2 : looped ? 1 : 0);
+      button->PushDown();
+   }
+   else {
+      button->SetAlternateIdx(0);
+      button->PopUp();
+   }
 }
 
 void TranscriptionToolBar::AdjustPlaySpeed(float adj)

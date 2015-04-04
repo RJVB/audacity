@@ -165,9 +165,46 @@ wxString FileNames::PlugInDir()
    return FileNames::MkDir( wxFileName( DataDir(), wxT("Plug-Ins") ).GetFullPath() );
 }
 
-wxString FileNames::PluginsCache()
+wxString FileNames::PluginRegistry()
 {
-   return wxFileName( DataDir(), wxT("plugins.cfg") ).GetFullPath();
+   return wxFileName( DataDir(), wxT("pluginregistry.cfg") ).GetFullPath();
+}
+
+wxString FileNames::PluginSettings()
+{
+   return wxFileName( DataDir(), wxT("pluginsettings.cfg") ).GetFullPath();
+}
+
+wxString FileNames::BaseDir()
+{
+   wxFileName baseDir;
+
+#if defined(__WXMAC__)
+   baseDir = PlatformCompatibility::GetExecutablePath();
+
+   // This removes (for instance) "Audacity.app/Contents/MacOSX/"
+   baseDir.RemoveLastDir();
+   baseDir.RemoveLastDir();
+   baseDir.RemoveLastDir();
+#elif defined(__WXMSW__)
+   // Don't use wxStandardPaths::Get().GetDataDir() since it removes
+   // the "Debug" directory in debug builds.
+   baseDir = PlatformCompatibility::GetExecutablePath();
+#else
+   // Linux goes into /*prefix*/share/audacity/
+   baseDir = wxStandardPaths::Get().GetDataDir();
+#endif
+
+   return baseDir.GetPath();
+}
+
+wxString FileNames::ModulesDir()
+{
+   wxFileName modulesDir(BaseDir(), wxEmptyString);
+
+   modulesDir.AppendDir(wxT("modules"));
+
+   return modulesDir.GetFullPath();
 }
 
 wxString FileNames::ThemeDir()

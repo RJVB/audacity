@@ -471,7 +471,6 @@ void FFmpegPresets::DeletePreset(wxString &name)
       if (!preset->mPresetName->CmpNoCase(name))
       {
          mPresets->erase(iter);
-         delete preset;
          break;
       }
    }
@@ -1254,7 +1253,7 @@ void ExportFFmpegOptions::FetchFormatList()
 {
    // Enumerate all output formats
    AVOutputFormat *ofmt = NULL;
-   while ((ofmt = av_oformat_next(ofmt)))
+   while ((ofmt = av_oformat_next(ofmt))!=NULL)
    {
       // Any audio-capable format has default audio codec.
       // If it doesn't, then it doesn't supports any audio codecs
@@ -1275,7 +1274,7 @@ void ExportFFmpegOptions::FetchCodecList()
 {
    // Enumerate all codecs
    AVCodec *codec = NULL;
-   while ((codec = av_codec_next(codec)))
+   while ((codec = av_codec_next(codec))!=NULL)
    {
       // We're only interested in audio and only in encoders
       if (codec->type == AVMEDIA_TYPE_AUDIO && av_codec_is_encoder(codec))
@@ -1535,7 +1534,7 @@ int ExportFFmpegOptions::FetchCompatibleCodecList(const wxChar *fmt, AVCodecID i
    if (found == 2)
    {
       AVCodec *codec = NULL;
-      while ((codec = av_codec_next(codec)))
+      while ((codec = av_codec_next(codec))!=NULL)
       {
          if (codec->type == AVMEDIA_TYPE_AUDIO && av_codec_is_encoder(codec))
          {
@@ -1610,7 +1609,7 @@ int ExportFFmpegOptions::FetchCompatibleFormatList(AVCodecID id, wxString *selfm
    if (found)
    {
       // Find all formats which have this codec as default and which are not in the list yet and add them too
-      while ((ofmt = av_oformat_next(ofmt)))
+      while ((ofmt = av_oformat_next(ofmt))!=NULL)
       {
          if (ofmt->audio_codec == id)
          {
@@ -1711,7 +1710,7 @@ void ExportFFmpegOptions::OnImportPresets(wxCommandEvent& WXUNUSED(event))
                   _("Select xml file with presets to import"),
                   gPrefs->Read(wxT("/FileFormats/FFmpegPresetDir")),
                   wxEmptyString,
-                  wxString(_("XML files (*.xml)|*.xml|All files (*.*)|*.*")),
+                  wxString(_("XML files (*.xml)|*.xml|All files|*")),
                   wxFD_OPEN);
    if (dlg.ShowModal() == wxID_CANCEL) return;
    path = dlg.GetPath();
@@ -1731,7 +1730,7 @@ void ExportFFmpegOptions::OnExportPresets(wxCommandEvent& WXUNUSED(event))
                   _("Select xml file to export presets into"),
                   gPrefs->Read(wxT("/FileFormats/FFmpegPresetDir")),
                   wxEmptyString,
-                  wxString(_("XML files (*.xml)|*.xml|All files (*.*)|*.*")),
+                  wxString(_("XML files (*.xml)|*.xml|All files|*")),
                   wxFD_SAVE|wxFD_OVERWRITE_PROMPT);
    if (dlg.ShowModal() == wxID_CANCEL) return;
    path = dlg.GetPath();
@@ -1846,7 +1845,7 @@ void ExportFFmpegOptions::DoOnCodecList()
       mCodecName->SetLabel(wxString(_("Failed to find the codec")));
       return;
    }
-   mCodecName->SetLabel(wxString::Format(wxT("[%d] %s"),cdc->id,selcdclong->c_str()));
+   mCodecName->SetLabel(wxString::Format(wxT("[%d] %s"), (int) cdc->id,selcdclong->c_str()));
 
    if (selfmt != NULL)
    {

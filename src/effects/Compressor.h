@@ -14,6 +14,8 @@
 class wxString;
 
 #include <wx/defs.h>
+#include <wx/dc.h>
+#include <wx/dcclient.h>
 #include <wx/bitmap.h>
 #include <wx/button.h>
 #include <wx/checkbox.h>
@@ -34,7 +36,7 @@ public:
    virtual ~EffectCompressor();
 
    virtual wxString GetEffectName() {
-      return wxString(_("Compressor..."));
+      return wxString(wxTRANSLATE("Compressor..."));
    }
 
    virtual std::set<wxString> GetEffectCategories() {

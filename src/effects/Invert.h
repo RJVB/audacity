@@ -24,7 +24,7 @@ class EffectInvert:public EffectSimpleMono {
 
  public:
    virtual wxString GetEffectName() {
-      return wxString(_("Invert"));
+      return wxString(wxTRANSLATE("Invert"));
    }
 
    virtual std::set<wxString> GetEffectCategories() {
@@ -39,6 +39,10 @@ class EffectInvert:public EffectSimpleMono {
 
    virtual wxString GetEffectAction() {
       return wxString(_("Inverting"));
+   }
+
+   virtual bool PromptUser() {
+      return true;
    }
 
  protected:

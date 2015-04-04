@@ -17,12 +17,14 @@
 #include "Audacity.h"
 
 #include <wx/app.h>
+#include <wx/cmdline.h>
 #include <wx/dir.h>
 #include <wx/event.h>
 #include <wx/docview.h>
 #include <wx/intl.h>
 #include <wx/snglinst.h>
 #include <wx/log.h>
+#include <wx/socket.h>
 #include <wx/timer.h>
 
 #include "widgets/FileHistory.h"
@@ -87,6 +89,7 @@ enum
    HaveRecentFiles        = 0x02000000,
    IsNotSyncLockedFlag    = 0x04000000,  //awd
    IsSyncLockedFlag       = 0x08000000,  //awd
+   IsRealtimeNotActiveFlag= 0x10000000,  //lll
 
    NoFlagsSpecifed        = 0xffffffff
 };
@@ -96,6 +99,10 @@ class BlockFile;
 class AudacityApp:public wxApp {
  public:
    virtual bool OnInit(void);
+   void FinishInits();
+#if wxCHECK_VERSION(3, 0, 0)
+   virtual void OnEventLoopEnter(wxEventLoopBase * pLoop);
+#endif
    virtual int OnExit(void);
    virtual void OnFatalException();
 
@@ -132,6 +139,10 @@ class AudacityApp:public wxApp {
    void OnReceiveCommand(AppCommandEvent &event);
 
    void OnTimer(wxTimerEvent & event);
+
+   // IPC communication
+   void OnServerEvent(wxSocketEvent & evt);
+   void OnSocketEvent(wxSocketEvent & evt);
 
    /** \brief Mark playback as having missing aliased blockfiles
      *
@@ -190,8 +201,6 @@ class AudacityApp:public wxApp {
 
    AudacityLogger *GetLogger();
 
-   Importer *mImporter;
-
 #if defined(__WXGTK__)
    /** \brief This flag is set true when in a keyboard event handler.
     * Used to work around a hang issue with ibus (bug 154) */
@@ -206,7 +215,7 @@ class AudacityApp:public wxApp {
 
    wxSingleInstanceChecker *mChecker;
 
-   wxTimer *mTimer;
+   wxTimer mTimer;
 
    bool                 m_aliasMissingWarningShouldShow;
    BlockFile           *m_LastMissingBlockFile;
@@ -219,14 +228,16 @@ class AudacityApp:public wxApp {
    bool InitTempDir();
    bool CreateSingleInstanceChecker(wxString dir);
 
-   /* utility method for printing the command line help message */
-   void PrintCommandLineHelp(void);
+   wxCmdLineParser *ParseCommandLine();
 
    bool mWindowRectAlreadySaved;
 
 #if defined(__WXMSW__)
    IPCServ *mIPCServ;
+#else
+   wxSocketServer *mIPCServ;
 #endif
+
  public:
     DECLARE_EVENT_TABLE()
 };

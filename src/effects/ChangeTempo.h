@@ -32,7 +32,7 @@ class EffectChangeTempo : public EffectSoundTouch {
    EffectChangeTempo();
 
    virtual wxString GetEffectName() {
-      return wxString(_("Change Tempo..."));
+      return wxString(wxTRANSLATE("Change Tempo..."));
    }
 
    virtual std::set<wxString> GetEffectCategories() {
@@ -42,7 +42,7 @@ class EffectChangeTempo : public EffectSoundTouch {
    }
 
    virtual wxString GetEffectIdentifier() {
-      return wxString(wxT("ChangeTempo"));
+      return wxString(wxT("Change Tempo"));
    }
 
    virtual wxString GetEffectAction() {

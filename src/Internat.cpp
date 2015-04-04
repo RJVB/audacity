@@ -45,7 +45,7 @@ void Internat::Init()
    // Save decimal point character
    struct lconv * localeInfo = localeconv();
    if (localeInfo)
-      mDecimalSeparator = wxString(localeInfo->decimal_point, wxConvLocal).GetChar(0);
+      mDecimalSeparator = wxString(wxSafeConvertMB2WX(localeInfo->decimal_point)).GetChar(0);
 
 //   wxLogDebug(wxT("Decimal separator set to '%c'"), mDecimalSeparator);
 
@@ -188,7 +188,7 @@ char *Internat::VerifyFilename(const wxString &s, bool input)
          wxMessageBox(_("The specified filename could not be converted due to Unicode character use."));
 
          name = FileSelector(_("Specify New Filename:"),
-                             NULL,
+                             wxEmptyString,
                              name,
                              f.GetExt(),
                              wxT("*.") + f.GetExt(),

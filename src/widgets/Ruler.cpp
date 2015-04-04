@@ -62,6 +62,7 @@ array of Ruler::Label.
 #include <wx/dcbuffer.h>
 #include <wx/settings.h>
 
+#include "../AudioIO.h"
 #include "../Internat.h"
 #include "../Project.h"
 #include "Ruler.h"
@@ -70,6 +71,7 @@ array of Ruler::Label.
 #include "../AllThemeResources.h"
 #include "../Experimental.h"
 #include "../TimeTrack.h"
+#include <wx/tooltip.h>
 
 #define max(a,b)  ( (a<b)?b:a )
 
@@ -116,9 +118,9 @@ Ruler::Ruler()
    fontSize = 8;
 #endif
 
-   mMinorMinorFont = new wxFont(fontSize-1, wxSWISS, wxNORMAL, wxNORMAL);
-   mMinorFont = new wxFont(fontSize, wxSWISS, wxNORMAL, wxNORMAL);
-   mMajorFont = new wxFont(fontSize, wxSWISS, wxNORMAL, wxBOLD);
+   mMinorMinorFont = new wxFont(fontSize - 1, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
+   mMinorFont = new wxFont(fontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
+   mMajorFont = new wxFont(fontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD);
    mUserFonts = false;
 
    #ifdef __WXMAC__
@@ -294,6 +296,8 @@ void Ruler::OfflimitsPixels(int start, int end)
          mLength = mRight-mLeft;
       else
          mLength = mBottom-mTop;
+      if( mLength < 0 )
+         return;
       mUserBits = new int[mLength+1];
       for(i=0; i<=mLength; i++)
          mUserBits[i] = 0;
@@ -934,45 +938,45 @@ void Ruler::Update(TimeTrack* timetrack)// Envelope *speedEnv, long minSpeed, lo
    int j;
 
    if (!mUserFonts) {
-     int fontSize = 4;
-     wxCoord strW, strH, strD, strL;
-     wxString exampleText = wxT("0.9");   //ignored for height calcs on all platforms
-     int desiredPixelHeight;
+      int fontSize = 4;
+      wxCoord strW, strH, strD, strL;
+      wxString exampleText = wxT("0.9");   //ignored for height calcs on all platforms
+      int desiredPixelHeight;
 
-     if (mOrientation == wxHORIZONTAL)
-       desiredPixelHeight = mBottom-mTop-5; // height less ticks and 1px gap
-     else
+      if (mOrientation == wxHORIZONTAL)
+         desiredPixelHeight = mBottom - mTop - 5; // height less ticks and 1px gap
+      else
          desiredPixelHeight = 12;   // why 12?  10 -> 12 seems to be max/min
 
-     if (desiredPixelHeight < 10)//8)
-       desiredPixelHeight = 10;//8;
-     if (desiredPixelHeight > 12)
-       desiredPixelHeight = 12;
+      if (desiredPixelHeight < 10)//8)
+         desiredPixelHeight = 10;//8;
+      if (desiredPixelHeight > 12)
+         desiredPixelHeight = 12;
 
       // Keep making the font bigger until it's too big, then subtract one.
-      mDC->SetFont(wxFont(fontSize, wxSWISS, wxNORMAL, wxBOLD));
+      mDC->SetFont(wxFont(fontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
       mDC->GetTextExtent(exampleText, &strW, &strH, &strD, &strL);
-      while( (strH-strD-strL) <= desiredPixelHeight && fontSize < 40) {
+      while ((strH - strD - strL) <= desiredPixelHeight && fontSize < 40) {
          fontSize++;
-         mDC->SetFont(wxFont(fontSize, wxSWISS, wxNORMAL, wxBOLD));
-         mDC->GetTextExtent(exampleText, &strW, &strH, &strD, & strL);
+         mDC->SetFont(wxFont(fontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
+         mDC->GetTextExtent(exampleText, &strW, &strH, &strD, &strL);
       }
       fontSize--;
-      mDC->SetFont(wxFont(fontSize, wxSWISS, wxNORMAL, wxNORMAL));
+      mDC->SetFont(wxFont(fontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
       mDC->GetTextExtent(exampleText, &strW, &strH, &strD, &strL);
       mLead = strL;
 
-     if (mMajorFont)
-        delete mMajorFont;
-     mMajorFont = new wxFont(fontSize, wxSWISS, wxNORMAL, wxBOLD);
+      if (mMajorFont)
+         delete mMajorFont;
+      mMajorFont = new wxFont(fontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD);
 
-     if (mMinorFont)
-        delete mMinorFont;
-     mMinorFont = new wxFont(fontSize, wxSWISS, wxNORMAL, wxNORMAL);
+      if (mMinorFont)
+         delete mMinorFont;
+      mMinorFont = new wxFont(fontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
 
-     if (mMinorMinorFont)
-        delete mMinorMinorFont;
-     mMinorMinorFont = new wxFont(fontSize-1, wxSWISS, wxNORMAL, wxNORMAL);
+      if (mMinorMinorFont)
+         delete mMinorMinorFont;
+      mMinorMinorFont = new wxFont(fontSize - 1, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
    }
 
    // If ruler is being resized, we could end up with it being too small.
@@ -1630,11 +1634,55 @@ AdornedRulerPanel::AdornedRulerPanel(wxWindow* parent,
                     mInner.GetBottom() );
    ruler.SetLabelEdges( false );
    ruler.SetFormat( Ruler::TimeFormat );
+
+   mIsRecording = false;
+
+#if wxUSE_TOOLTIPS
+   RegenerateTooltips();
+   wxToolTip::Enable(true);
+#endif
+
+   wxTheApp->Connect(EVT_AUDIOIO_CAPTURE,
+                     wxCommandEventHandler(AdornedRulerPanel::OnCapture),
+                     NULL,
+                     this);
 }
 
 AdornedRulerPanel::~AdornedRulerPanel()
 {
+   wxTheApp->Disconnect(EVT_AUDIOIO_CAPTURE,
+                        wxCommandEventHandler(AdornedRulerPanel::OnCapture),
+                        NULL,
+                        this);
    delete mBuffer;
+}
+
+void AdornedRulerPanel::RegenerateTooltips()
+{
+#if wxUSE_TOOLTIPS
+   if (mIsRecording)
+      this->SetToolTip(_("Timeline actions disabled during recording"));
+   else
+      this->SetToolTip(_("Timeline - Quick Play enabled"));
+#endif
+}
+
+void AdornedRulerPanel::OnCapture(wxCommandEvent & evt)
+{
+   evt.Skip();
+
+   if (evt.GetInt() != 0)
+   {
+      // Set cursor immediately  because OnMouseEvents is not called
+      // if recording is initiated by a modal window (Timer Record).
+      SetCursor(wxCursor(wxCURSOR_DEFAULT));
+      mIsRecording = true;
+   }
+   else {
+      SetCursor(wxCursor(wxCURSOR_HAND));
+      mIsRecording = false;
+   }
+   RegenerateTooltips();
 }
 
 void AdornedRulerPanel::OnErase(wxEraseEvent & WXUNUSED(evt))
@@ -1652,7 +1700,7 @@ void AdornedRulerPanel::OnPaint(wxPaintEvent & WXUNUSED(evt))
 
    DoDrawBorder(&dc);
 
-   if (mViewInfo->sel0 < mViewInfo->sel1)
+   if (!mViewInfo->selectedRegion.isPoint())
    {
       DoDrawSelection(&dc);
    }
@@ -1664,7 +1712,7 @@ void AdornedRulerPanel::OnPaint(wxPaintEvent & WXUNUSED(evt))
 
    DoDrawMarks(&dc, true);
 
-   if (mViewInfo->sel0 == mViewInfo->sel1)
+   if (mViewInfo->selectedRegion.isPoint())
    {
       DoDrawCursor(&dc);
    }
@@ -1721,12 +1769,25 @@ bool AdornedRulerPanel::IsWithinMarker(int mousePosX, double markerTime)
 
 void AdornedRulerPanel::OnMouseEvents(wxMouseEvent &evt)
 {
+   // Disable mouse actions on Timeline while recording.
+   if (mIsRecording)
+      return;
+
    bool isWithinStart = IsWithinMarker(evt.GetX(), mPlayRegionStart);
    bool isWithinEnd = IsWithinMarker(evt.GetX(), mPlayRegionEnd);
 
    mLastMouseX = evt.GetX();
 
-   if (isWithinStart || isWithinEnd)
+   if (evt.Leaving())
+   {
+#if defined(__WXMAC__)
+      // We must install the cursor ourselves since the window under
+      // the mouse is no longer this one and wx2.8.12 makes that check.
+      // Should re-evaluate with wx3.
+      wxSTANDARD_CURSOR->MacInstall();
+#endif
+   }
+   else if (isWithinStart || isWithinEnd)
       SetCursor(wxCursor(wxCURSOR_SIZEWE));
    else
       SetCursor(wxCursor(wxCURSOR_HAND));
@@ -1927,8 +1988,10 @@ void AdornedRulerPanel::DoDrawSelection(wxDC * dc)
 {
    // Draw selection
    double zoom = mViewInfo->zoom;
-   double sel0 = mViewInfo->sel0 - mViewInfo->h + mLeftOffset / zoom;
-   double sel1 = mViewInfo->sel1 - mViewInfo->h + mLeftOffset / zoom;
+   double sel0 =
+      mViewInfo->selectedRegion.t0() - mViewInfo->h + mLeftOffset / zoom;
+   double sel1 =
+      mViewInfo->selectedRegion.t1() - mViewInfo->h + mLeftOffset / zoom;
 
    if( sel0 < 0.0 )
       sel0 = 0.0;
